@@ -1,7 +1,7 @@
 
 # 👤 Users Portal
 
-A modern, scalable frontend architecture built for the FMR assignment.
+A modern, scalable frontend architecture showcase, originally developed as a high-performance trading-style data visualization system.
 
 **🚀 [Live Demo](https://users-portal-system.vercel.app/)**
 
@@ -50,7 +50,7 @@ The dashboard includes a real-time monitoring layer that turns streamed order ac
 - **Notification mechanics service (`libs/users/data-access/src/lib/services`)**  
   `OrderNotificationsService` handles notification ids, timestamps, auto-dismiss timers, manual dismiss, and cleanup.
 - **Feature/UI rendering (`libs/users/feature` + `libs/users/ui`)**  
-  Toasts are rendered via `fmr-toast-stack` from `vm.notifications`.
+  Toasts are rendered via `toast-stack` from `vm.notifications`.
 
 ### Try it locally
 
