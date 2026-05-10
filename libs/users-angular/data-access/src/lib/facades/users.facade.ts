@@ -22,7 +22,7 @@ import {
   OrderMonitoringState,
   reduceOrderMonitoring,
   ORDER_BURST_WINDOW_MS
-} from '@portal/users-angular/utils';
+} from '@portal/users/utils';
 import { UsersActions } from '../+state/users.actions';
 import { UsersSelectors } from '../+state/users.selectors';
 import { OrderNotificationsService } from '../services/order-notifications.service';

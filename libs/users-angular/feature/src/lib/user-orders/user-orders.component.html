@@ -1,5 +1,5 @@
 @if ($vm(); as vm) {
-  <toast-stack
+  <fmr-toast-stack
     [notifications]="vm.notifications"
     (dismissed)="dismissOrderNotification($event)"
   />
@@ -22,7 +22,7 @@
       <p class="error-state">{{ vm.error }}</p>
     }
 
-    <user-buttons
+    <fmr-user-buttons
       [users]="vm.users"
       [selectedUserId]="vm.selectedUserId"
       (userSelected)="selectUser($event)"
@@ -30,11 +30,11 @@
 
     @if (vm.selectedUserSummary; as summary) {
       <div class="summary-grid">
-        <user-name [userName]="summary.userName" />
-        <user-total-orders [totalAmount]="summary.totalAmount" />
+        <fmr-user-name [userName]="summary.userName" />
+        <fmr-user-total-orders [totalAmount]="summary.totalAmount" />
       </div>
 
-      <orders-card
+      <fmr-orders-card
         [orders]="vm.orders"
         [loading]="vm.loading"
         [loaded]="vm.loaded"

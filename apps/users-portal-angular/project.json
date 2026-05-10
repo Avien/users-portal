@@ -4,7 +4,7 @@
   "projectType": "application",
   "prefix": "app",
   "sourceRoot": "apps/users-portal-angular/src",
-  "tags": ["scope:users", "type:app"],
+  "tags": ["scope:users", "type:app", "framework:angular"],
   "targets": {
     "build": {
       "executor": "@angular/build:application",

@@ -11,3 +11,4 @@ export * from './lib/models/base-entity-state.interface';
 export * from './lib/models/notification.model';
 export * from './lib/utils/user-orders.utils';
 export * from './lib/utils/order-monitoring.utils';
+export * from './lib/mocks/mock-data';

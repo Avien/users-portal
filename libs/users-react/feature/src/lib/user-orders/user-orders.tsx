@@ -1,13 +1,15 @@
 import type { CSSProperties } from 'react';
 import { useUsersFacade } from '../use-users-facade';
-import { UserButtons, UserName, UserTotalOrders, OrdersCard } from '@portal/users-react/ui';
+import { UserButtons, UserName, UserTotalOrders, OrdersCard, ToastStack } from '@portal/users-react/ui';
 import styles from './user-orders.module.css';
 
 export function UserOrders() {
-  const { users, loading, loaded, error, selectedUserId, selectedUserSummary, orders, selectUser } =
+  const { users, loading, loaded, error, selectedUserId, selectedUserSummary, orders, selectUser, notifications, dismissOrderNotification } =
     useUsersFacade();
 
   return (
+    <>
+    <ToastStack notifications={notifications} onDismiss={dismissOrderNotification} />
     <section style={shellStyle}>
       <header style={pageHeaderStyle}>
         <h1 style={{ margin: '0 0 0.5rem' }}>Users orders dashboard</h1>
@@ -33,6 +35,7 @@ export function UserOrders() {
         <p style={emptyStateStyle}>Select a user</p>
       ) : null}
     </section>
+    </>
   );
 }
 

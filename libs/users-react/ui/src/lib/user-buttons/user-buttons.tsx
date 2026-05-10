@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import type { CSSProperties } from 'react';
-import type { User } from '@portal/users-angular/utils';
+import type { User } from '@portal/users/utils';
 
 interface UserButtonsProps {
   users: User[];

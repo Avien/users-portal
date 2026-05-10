@@ -1,12 +1,12 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { ScrollingModule } from '@angular/cdk/scrolling';
-import { Order } from '@portal/users-angular/utils';
+import { Order } from '@portal/users/utils';
 
 const ORDERS_VIRTUAL_ROW_HEIGHT_PX = 52;
 
 @Component({
-  selector: 'orders-card',
+  selector: 'fmr-orders-card',
   standalone: true,
   templateUrl: './orders-card.component.html',
   styleUrl: './orders-card.component.scss',

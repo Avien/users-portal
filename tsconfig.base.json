@@ -18,7 +18,7 @@
       "@portal/users-angular/data-access": ["libs/users-angular/data-access/src/index.ts"],
       "@portal/users-angular/ui": ["libs/users-angular/ui/src/index.ts"],
       "@portal/users-angular/feature": ["libs/users-angular/feature/src/index.ts"],
-      "@portal/users-angular/utils": ["libs/users-angular/utils/src/index.ts"],
+      "@portal/users/utils": ["libs/users/src/index.ts"],
       "@portal/users-react/data-access": ["libs/users-react/data-access/src/index.ts"],
       "@portal/users-react/feature": ["libs/users-react/feature/src/index.ts"],
       "@portal/users-react/ui": ["libs/users-react/ui/src/index.ts"]

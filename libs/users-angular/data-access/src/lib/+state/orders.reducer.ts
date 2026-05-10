@@ -1,6 +1,6 @@
 import { createEntityAdapter } from '@ngrx/entity';
 import { createReducer, on } from '@ngrx/store';
-import { Order, OrdersState, normalizeOrderUserIdFromId } from '@portal/users-angular/utils';
+import { Order, OrdersState, normalizeOrderUserIdFromId } from '@portal/users/utils';
 import { UsersActions } from './users.actions';
 
 export const ordersAdapter = createEntityAdapter<Order>();

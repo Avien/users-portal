@@ -1,8 +1,8 @@
 module.exports = {
   displayName: 'users-utils',
-  preset: '../../../jest.preset.js',
+  preset: '../../jest.preset.js',
   setupFilesAfterEnv: ['<rootDir>/src/test-setup.ts'],
-  coverageDirectory: '../../../coverage/libs/users/utils',
+  coverageDirectory: '../../coverage/libs/users',
   transform: {
     '^.+\\.(ts|mjs|js|html)$': [
       'jest-preset-angular',

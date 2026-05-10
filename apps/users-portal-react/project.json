@@ -3,7 +3,7 @@
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "apps/users-portal-react/src",
   "projectType": "application",
-  "tags": [],
+  "tags": ["framework:react"],
   "// targets": "to see all targets run: nx show project users-portal-react --web",
   "targets": {}
 }

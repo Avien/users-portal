@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement } from 'react';
 import { useUsersFacade } from './use-users-facade';
 import * as dataAccess from '@portal/users-react/data-access';
+import { useUsersStore } from '@portal/users-react/data-access';
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
@@ -17,16 +18,21 @@ const MOCK_ORDERS = [
   { id: 2, userId: 1, total: 25 },
 ];
 
-vi.mock('@portal/users-react/data-access', () => ({
-  fetchUsers: vi.fn(),
-  fetchOrdersByUser: vi.fn(),
-}));
+// Preserve real useUsersStore — only mock API functions
+vi.mock('@portal/users-react/data-access', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@portal/users-react/data-access')>();
+  return {
+    ...actual,
+    fetchUsers: vi.fn(),
+    fetchOrdersByUser: vi.fn(),
+  };
+});
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function makeWrapper() {
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
   return ({ children }: { children: React.ReactNode }) =>
     createElement(QueryClientProvider, { client: queryClient }, children);
@@ -36,6 +42,7 @@ function makeWrapper() {
 
 describe('useUsersFacade', () => {
   beforeEach(() => {
+    useUsersStore.setState({ selectedUserId: null, notifications: [] });
     vi.mocked(dataAccess.fetchUsers).mockResolvedValue(MOCK_USERS);
     vi.mocked(dataAccess.fetchOrdersByUser).mockResolvedValue(MOCK_ORDERS);
   });

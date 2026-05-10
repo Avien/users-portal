@@ -1,11 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import type { IUsersFacadeInteractions, UserOrdersVm } from '@portal/users-angular/utils';
-import { buildUserTotalOrdersVm } from '@portal/users-angular/utils';
-import { fetchUsers, fetchOrdersByUser } from '@portal/users-react/data-access';
+import { useEffect, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { IUsersFacadeInteractions, UserOrdersVm, Order } from '@portal/users/utils';
+import { buildUserTotalOrdersVm } from '@portal/users/utils';
+import { fetchUsers, fetchOrdersByUser, useUsersStore, drainPendingOrders } from '@portal/users-react/data-access';
 
 export function useUsersFacade(): UserOrdersVm & IUsersFacadeInteractions {
-  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const queryClient = useQueryClient();
+  const selectedUserId = useUsersStore((s) => s.selectedUserId);
+  const notifications = useUsersStore((s) => s.notifications);
+  const selectUser = useUsersStore((s) => s.selectUser);
+  const dismissNotification = useUsersStore((s) => s.dismissNotification);
 
   const usersQuery = useQuery({
     queryKey: ['users'],
@@ -16,6 +20,7 @@ export function useUsersFacade(): UserOrdersVm & IUsersFacadeInteractions {
     queryKey: ['orders', selectedUserId],
     queryFn: () => fetchOrdersByUser(selectedUserId!),
     enabled: selectedUserId !== null,
+    staleTime: Infinity,
   });
 
   const selectedUser = useMemo(
@@ -30,28 +35,30 @@ export function useUsersFacade(): UserOrdersVm & IUsersFacadeInteractions {
 
   useEffect(() => {
     if (selectedUserId === null && usersQuery.data && usersQuery.data.length > 0) {
-      setSelectedUserId(usersQuery.data[0].id);
+      selectUser(usersQuery.data[0].id);
     }
-  }, [usersQuery.data, selectedUserId]);
+  }, [usersQuery.data, selectedUserId, selectUser]);
 
-  const selectUser = useCallback((id: number) => {
-    setSelectedUserId(id);
-  }, []);
-
-  const dismissOrderNotification = useCallback((_id: string) => {
-    // implemented when notifications + Zustand are introduced
-  }, []);
+  // Merge any WS orders that arrived before this user's API fetch completed
+  useEffect(() => {
+    if (!ordersQuery.isSuccess || selectedUserId === null) return;
+    const pending = drainPendingOrders(selectedUserId);
+    if (pending.length === 0) return;
+    queryClient.setQueryData<Order[]>(['orders', selectedUserId], (prev) =>
+      prev ? [...prev, ...pending] : pending
+    );
+  }, [ordersQuery.isSuccess, selectedUserId, queryClient]);
 
   return {
     users: usersQuery.data ?? [],
-    loading: usersQuery.isLoading,
+    loading: usersQuery.isLoading || ordersQuery.isLoading,
     loaded: usersQuery.isSuccess,
     error: usersQuery.error ? String(usersQuery.error) : null,
     orders: ordersQuery.data ?? [],
     selectedUserId,
     selectedUserSummary,
-    notifications: [],
+    notifications,
     selectUser,
-    dismissOrderNotification,
+    dismissOrderNotification: dismissNotification,
   };
 }

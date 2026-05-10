@@ -1,7 +1,7 @@
 import { inject, Injectable, InjectionToken } from '@angular/core';
 import { filter, Observable, map } from 'rxjs';
 import { webSocket } from 'rxjs/webSocket';
-import { Order } from '@portal/users-angular/utils';
+import { Order } from '@portal/users/utils';
 
 interface OrderStreamEvent {
   type: 'order-update';

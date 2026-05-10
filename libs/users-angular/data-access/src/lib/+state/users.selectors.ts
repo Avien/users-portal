@@ -8,7 +8,7 @@ import {
   USERS_FEATURE_KEY,
   UserOrderSummary,
   UsersState
-} from '@portal/users-angular/utils';
+} from '@portal/users/utils';
 import { ordersAdapter } from './orders.reducer';
 import { usersAdapter } from './users.reducer';
 

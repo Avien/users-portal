@@ -18,28 +18,23 @@ apps/
   users-portal-react/       ← React app (actively developed)
 
 libs/
-  users/
-    utils/      (@fmr/users/utils)       ← Pure TS, no framework deps — shared by BOTH apps
-    data-access/ (@fmr/users/data-access) ← Angular NgRx store, effects, facade
-    ui/          (@fmr/users/ui)          ← Angular presentational components
-    feature/     (@fmr/users/feature)     ← Angular smart container
-```
+  users/                    ← framework-agnostic, shared by BOTH apps
+    utils/  (@portal/users/utils)  ← Pure TS, no framework deps — domain models, pure utils
 
-## Planned React Libs (not yet generated)
+  users-angular/            ← Angular-specific only
+    data-access/ (@portal/users-angular/data-access) ← NgRx store, effects, facade
+    ui/          (@portal/users-angular/ui)           ← Angular presentational components
+    feature/     (@portal/users-angular/feature)      ← Angular smart container
 
+  users-react/              ← React-specific only
+    data-access/ (@portal/users-react/data-access) ← TanStack Query, Zustand store, API functions
+    feature/     (@portal/users-react/feature)     ← useUsersFacade hook
+    ui/          (@portal/users-react/ui)           ← React presentational components
 ```
-libs/
-  users-react/
-    data-access/ (@fmr/users-react/data-access) ← TanStack Query, Zustand store, API functions
-    feature/     (@fmr/users-react/feature)      ← useUsersFacade hook (currently in app)
-    ui/          (@fmr/users-react/ui)            ← React presentational components
-```
-
-These will be generated when TanStack Query and Zustand are introduced. Code currently in `apps/users-portal-react/src/app/feature/` will move here.
 
 ---
 
-## Shared Contracts (libs/users/utils)
+## Shared Contracts (libs/users/utils → @portal/users/utils)
 
 These interfaces are the single source of truth for both Angular and React:
 
@@ -49,9 +44,10 @@ These interfaces are the single source of truth for both Angular and React:
   - `dismissOrderNotification(id: string): void`
   - NOTE: `loadUsers()` is intentionally absent — Angular dispatches NgRx action, React uses TanStack Query automatically
 - `User`, `Order`, `Notification`, `UserOrderSummary` — domain models
+- `reduceOrderMonitoring`, `buildUserTotalOrdersVm` — pure domain logic shared by both facades
 
 **Rules:**
-- Never duplicate these types in app code — always import from `@fmr/users/utils`
+- Never duplicate these types in app code — always import from `@portal/users/utils`
 - When adding new shared contracts, add to utils first, then implement in both apps
 - Angular `UsersFacade implements IUsersFacadeInteractions` — keep this in sync
 

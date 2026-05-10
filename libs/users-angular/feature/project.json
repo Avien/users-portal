@@ -4,7 +4,7 @@
   "sourceRoot": "libs/users-angular/feature/src",
   "prefix": "lib",
   "projectType": "library",
-  "tags": ["scope:users", "type:feature"],
+  "tags": ["scope:users", "type:feature", "framework:angular"],
   "targets": {
     "test": {
       "executor": "@nx/jest:jest",

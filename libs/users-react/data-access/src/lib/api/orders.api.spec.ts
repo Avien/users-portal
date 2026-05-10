@@ -29,7 +29,7 @@ describe('fetchOrdersByUser', () => {
     const promise = fetchOrdersByUser(2);
     vi.advanceTimersByTime(800);
     const result = await promise;
-    expect(result.map((o) => o.total)).toEqual([75, 350]);
+    expect(result.map((o) => o.total)).toEqual([220, 18.75]);
   });
 
   it('does not resolve before 800ms', async () => {

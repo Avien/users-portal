@@ -3,5 +3,5 @@
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "libs/users-react/data-access/src",
   "projectType": "library",
-  "tags": ["scope:users-react", "type:data-access"]
+  "tags": ["scope:users-react", "type:data-access", "framework:react"]
 }

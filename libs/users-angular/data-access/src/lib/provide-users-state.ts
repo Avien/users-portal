@@ -4,7 +4,7 @@ import { provideEffects } from '@ngrx/effects';
 import { ordersReducer } from './+state/orders.reducer';
 import { usersReducer } from './+state/users.reducer';
 import { UsersEffects } from './+state/users.effects';
-import { ORDERS_FEATURE_KEY, USERS_FEATURE_KEY } from '@portal/users-angular/utils';
+import { ORDERS_FEATURE_KEY, USERS_FEATURE_KEY } from '@portal/users/utils';
 
 export function provideUsersState(): EnvironmentProviders {
   return makeEnvironmentProviders([

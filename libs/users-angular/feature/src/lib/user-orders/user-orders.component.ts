@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, inject, OnInit, Signal } from '@angular/core';
 import { UsersFacade } from '@portal/users-angular/data-access';
-import { UserOrdersVm } from '@portal/users-angular/utils';
+import { UserOrdersVm } from '@portal/users/utils';
 import {
   ToastStackComponent,
   UserNameComponent,
@@ -10,7 +10,7 @@ import {
 } from '@portal/users-angular/ui';
 
 @Component({
-  selector: 'user-orders',
+  selector: 'fmr-user-orders',
   standalone: true,
   imports: [
     ToastStackComponent,

@@ -1,6 +1,6 @@
 import { createEntityAdapter } from '@ngrx/entity';
 import { createReducer, on } from '@ngrx/store';
-import { User, UsersState } from '@portal/users-angular/utils';
+import { User, UsersState } from '@portal/users/utils';
 import { UsersActions } from './users.actions';
 
 export const usersAdapter = createEntityAdapter<User>();

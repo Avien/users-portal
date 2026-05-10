@@ -3,5 +3,5 @@
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "libs/users-react/feature/src",
   "projectType": "library",
-  "tags": ["scope:users-react", "type:feature"]
+  "tags": ["scope:users-react", "type:feature", "framework:react"]
 }

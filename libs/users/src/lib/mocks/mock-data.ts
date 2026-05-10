@@ -1,9 +1,10 @@
-import { Order, User } from '@portal/users-angular/utils';
+import type { User } from '../models/user.interface';
+import type { Order } from '../models/order.interface';
 
 export const MOCK_USERS: User[] = [
   { id: 1, name: 'Avi Cohen' },
   { id: 2, name: 'Dana Levi' },
-  { id: 3, name: 'Noam Katz' }
+  { id: 3, name: 'Noam Katz' },
 ];
 
 export const MOCK_ORDERS: Order[] = [
@@ -13,5 +14,5 @@ export const MOCK_ORDERS: Order[] = [
   { id: 202, userId: 2, total: 18.75 },
   { id: 301, userId: 3, total: 510.1 },
   { id: 302, userId: 3, total: 99.9 },
-  { id: 303, userId: 3, total: 45 }
+  { id: 303, userId: 3, total: 45 },
 ];

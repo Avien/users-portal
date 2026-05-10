@@ -21,9 +21,9 @@ describe('fetchUsers', () => {
     const promise = fetchUsers();
     vi.advanceTimersByTime(1500);
     const result = await promise;
-    expect(result[0]).toEqual({ id: 1, name: 'Alice Johnson' });
-    expect(result[1]).toEqual({ id: 2, name: 'Bob Smith' });
-    expect(result[2]).toEqual({ id: 3, name: 'Carol Williams' });
+    expect(result[0]).toEqual({ id: 1, name: 'Avi Cohen' });
+    expect(result[1]).toEqual({ id: 2, name: 'Dana Levi' });
+    expect(result[2]).toEqual({ id: 3, name: 'Noam Katz' });
   });
 
   it('does not resolve before 1500ms', async () => {

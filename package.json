@@ -10,7 +10,11 @@
     "start:react": "nx serve users-portal-react --port=4201",
     "mock:ws": "node tools/mock-orders-ws-server.mjs",
     "validate": "npm run lint && npm run test",
-    "build:prod": "npm run validate && nx build users-portal-angular"
+    "validate:angular": "nx run-many -t lint test --projects=tag:framework:angular,tag:framework:shared",
+    "validate:react": "nx run-many -t lint test --projects=tag:framework:react,tag:framework:shared",
+    "build:angular": "npm run validate:angular && nx build users-portal-angular",
+    "build:react": "npm run validate:react && nx build users-portal-react",
+    "build:prod": "npm run build:angular"
   },
   "private": true,
   "dependencies": {
@@ -27,9 +31,11 @@
     "@ngrx/store": "^21.0.1",
     "@ngrx/store-devtools": "^21.0.1",
     "@tanstack/react-query": "^5.100.9",
+    "@tanstack/react-virtual": "^3.13.24",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "rxjs": "~7.8.0"
+    "rxjs": "~7.8.0",
+    "zustand": "^5.0.13"
   },
   "devDependencies": {
     "@angular-devkit/core": "~21.1.0",

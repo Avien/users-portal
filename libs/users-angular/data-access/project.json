@@ -4,7 +4,7 @@
   "sourceRoot": "libs/users-angular/data-access/src",
   "prefix": "lib",
   "projectType": "library",
-  "tags": ["scope:users", "type:data-access"],
+  "tags": ["scope:users", "type:data-access", "framework:angular"],
   "targets": {
     "test": {
       "executor": "@nx/jest:jest",

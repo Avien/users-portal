@@ -1,8 +1,8 @@
 import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
-import { User } from '@portal/users-angular/utils';
+import { User } from '@portal/users/utils';
 
 @Component({
-  selector: 'user-buttons',
+  selector: 'fmr-user-buttons',
   standalone: true,
   templateUrl: './user-buttons.component.html',
   styleUrl: './user-buttons.component.scss',

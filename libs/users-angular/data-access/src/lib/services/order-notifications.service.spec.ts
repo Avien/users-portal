@@ -1,6 +1,6 @@
 import { signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Notification } from '@portal/users-angular/utils';
+import { Notification } from '@portal/users/utils';
 import { OrderNotificationsService } from './order-notifications.service';
 
 describe('OrderNotificationsService', () => {

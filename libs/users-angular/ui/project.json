@@ -4,7 +4,7 @@
   "sourceRoot": "libs/users-angular/ui/src",
   "prefix": "lib",
   "projectType": "library",
-  "tags": ["scope:users", "type:ui"],
+  "tags": ["scope:users", "type:ui", "framework:angular"],
   "targets": {
     "test": {
       "executor": "@nx/jest:jest",
