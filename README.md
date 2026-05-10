@@ -32,6 +32,17 @@ The project demonstrates how the same domain and architectural patterns (facade,
 * **Signals + Selectors Integration:** NgRx selectors are seamlessly converted into Angular Signals using `store.selectSignal`, bridging the gap between global state and local reactivity.
 * **Performance & Smart Caching:** The Facade uses per-user loaded flags (`loadedUserIds`) instead of order-list length, preventing false cache hits when partial WebSocket data arrives before first API load.
 
+## 🏗 Architectural Highlights (React App)
+
+* **Server State vs UI State separation:** TanStack Query owns all server state (users list, per-user orders cache). Zustand owns UI state (`selectedUserId`, `notifications`). The two never overlap.
+* **`staleTime: Infinity` on orders:** The WebSocket stream is the sole freshness mechanism — no background refetching that could overwrite live data. Orders accumulate via cache updates, not re-fetches.
+* **WebSocket as an explicit singleton:** Unlike Angular's NgRx Effects (automatically singleton), React requires intentional placement. `useOrdersStream()` lives in `App`, not in any per-user component, mirroring the Effect lifecycle.
+* **Pending buffer pattern:** WS orders for users whose API data hasn't loaded yet are buffered in a module-level Map (`pendingByUser`). The facade drains and merges the buffer via a `useEffect` once `ordersQuery.isSuccess` fires — no race condition, no lost events.
+* **Facade hook as the NgRx equivalent:** `useUsersFacade()` composes TanStack Query + Zustand and returns a plain object matching `UserOrdersVm & IUsersFacadeInteractions`. Components are unaware of either library.
+* **`React.memo` + `useMemo` as OnPush + Selectors:** Presentational components wrapped in `React.memo` only re-render when props change. All derived values (selected user, order summary) are memoised in the facade — equivalent to NgRx memoised selectors.
+* **Virtual scroll:** The orders list uses `@tanstack/react-virtual` (headless, same ecosystem as TanStack Query) for fixed-size row virtualisation — the React equivalent of Angular CDK `cdk-virtual-scroll-viewport`.
+* **Notifications via Zustand actions + module-level timers:** `addNotification` / `dismissNotification` with a module-level `dismissTimers` Map replaces Angular's `OrderNotificationsService` class — no extra service abstraction needed since the Zustand store IS the singleton.
+
 ---
 
 ## 🔔 Order Monitoring Notifications
