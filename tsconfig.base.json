@@ -15,10 +15,13 @@
     "skipDefaultLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "@fmr/users/data-access": ["libs/users/data-access/src/index.ts"],
-      "@fmr/users/ui": ["libs/users/ui/src/index.ts"],
-      "@fmr/users/feature": ["libs/users/feature/src/index.ts"],
-      "@fmr/users/utils": ["libs/users/utils/src/index.ts"]
+      "@fmr/users-angular/data-access": ["libs/users-angular/data-access/src/index.ts"],
+      "@fmr/users-angular/ui": ["libs/users-angular/ui/src/index.ts"],
+      "@fmr/users-angular/feature": ["libs/users-angular/feature/src/index.ts"],
+      "@fmr/users-angular/utils": ["libs/users-angular/utils/src/index.ts"],
+      "@fmr/users-react/data-access": ["libs/users-react/data-access/src/index.ts"],
+      "@fmr/users-react/feature": ["libs/users-react/feature/src/index.ts"],
+      "@fmr/users-react/ui": ["libs/users-react/ui/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "tmp"]

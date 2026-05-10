@@ -1,0 +1,7 @@
+{
+  "name": "users-react-data-access",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/users-react/data-access/src",
+  "projectType": "library",
+  "tags": ["scope:users-react", "type:data-access"]
+}

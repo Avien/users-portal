@@ -6,7 +6,14 @@ export default [
   ...nx.configs['flat/typescript'],
   ...nx.configs['flat/javascript'],
   {
-    ignores: ['**/dist', '**/out-tsc', '**/.nx', '**/.DS_Store', '**/__MACOSX/**']
+    ignores: [
+      '**/dist',
+      '**/out-tsc',
+      '**/.nx',
+      '**/.DS_Store',
+      '**/__MACOSX/**',
+      '**/vite.config.*.timestamp*'
+    ]
   },
   {
     files: ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx'],
