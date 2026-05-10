@@ -18,8 +18,8 @@ apps/
   users-portal-react/       ← React app (actively developed)
 
 libs/
-  users/                    ← framework-agnostic, shared by BOTH apps
-    utils/  (@portal/users/utils)  ← Pure TS, no framework deps — domain models, pure utils
+  users/  (@portal/users/utils)   ← framework-agnostic, shared by BOTH apps
+                                     Pure TS — domain models, pure utils, canonical mock data
 
   users-angular/            ← Angular-specific only
     data-access/ (@portal/users-angular/data-access) ← NgRx store, effects, facade
@@ -27,9 +27,9 @@ libs/
     feature/     (@portal/users-angular/feature)      ← Angular smart container
 
   users-react/              ← React-specific only
-    data-access/ (@portal/users-react/data-access) ← TanStack Query, Zustand store, API functions
+    data-access/ (@portal/users-react/data-access) ← TanStack Query, Zustand store, API fns, useOrdersStream
     feature/     (@portal/users-react/feature)     ← useUsersFacade hook
-    ui/          (@portal/users-react/ui)           ← React presentational components
+    ui/          (@portal/users-react/ui)           ← React presentational components (incl. virtual scroll)
 ```
 
 ---
@@ -69,7 +69,27 @@ These interfaces are the single source of truth for both Angular and React:
 ## npm Scripts
 
 ```bash
-npm start              # serve Angular app
-npm run start:react    # serve React app (http://localhost:4200 or 4201)
-npm run validate       # lint + test both apps
+npm start                  # serve Angular app
+npm run start:react        # serve React app (http://localhost:4201)
+npm run mock:ws            # start local WS mock server at ws://localhost:3000/orders
+
+npm run validate           # lint + test all projects
+npm run validate:angular   # lint + test Angular projects + shared (tag:framework:angular + tag:framework:shared)
+npm run validate:react     # lint + test React projects + shared (tag:framework:react + tag:framework:shared)
+
+npm run build:prod         # alias for build:angular (Vercel Angular deployment)
+npm run build:angular      # validate:angular → nx build users-portal-angular → dist/apps/users-portal-angular
+npm run build:react        # validate:react   → nx build users-portal-react   → dist/users-portal-react
 ```
+
+## Module Boundary Tags
+
+Every `project.json` carries a `framework:` tag used by ESLint `@nx/enforce-module-boundaries` and the scoped validate/build scripts:
+
+| Tag | Projects |
+|---|---|
+| `framework:angular` | `users-portal-angular`, `users-data-access`, `users-feature`, `users-ui` |
+| `framework:react` | `users-portal-react`, `users-react-data-access`, `users-react-feature`, `users-react-ui` |
+| `framework:shared` | `users-utils` |
+
+The existing `type:` tags (app, feature, data-access, ui, utils) enforce layer direction for both frameworks simultaneously.

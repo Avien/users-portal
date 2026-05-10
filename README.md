@@ -211,9 +211,17 @@ This project demonstrates:
 
 ## 🤖 AI-Assisted Development
 
-- The system was designed by translating product requirements into a clear architectural model, including structure, boundaries, and implementation patterns.
-- AI was used as an implementation accelerator to generate a strong initial baseline aligned with this architecture.
-- The system was then refined iteratively through engineering-led review, testing, and targeted improvements.
-- AI also supported architecture-aware reviews, helping identify performance risks and structural inconsistencies.
-- Final design decisions, trade-offs, and code quality were owned and validated manually.
+This project was built across two phases, each with a different AI pairing:
+
+**Angular app** (`apps/users-portal-angular`) — built with **ChatGPT + Cursor**
+- Architecture was designed upfront by translating product requirements into a clear structural model (Nx boundaries, NgRx patterns, facade contract)
+- AI generated the initial implementation baseline aligned to that architecture
+- Refined iteratively through engineering-led review, testing, and targeted improvements
+- Final design decisions, trade-offs, and code quality were owned and validated manually
+
+**React app** (`apps/users-portal-react`) — rebuilt with **Claude Code** (this repo)
+- The Angular app serves as the architectural reference; the goal is an idiomatic React rebuild — not a direct translation
+- Claude Code was used as a pair-programmer throughout: implementing features, explaining Angular→React mental model shifts, writing tests, and catching architectural drift
+- All decisions (patterns, naming, boundaries) were reviewed and approved incrementally
+- Serves as a learning exercise in how the same domain maps across two very different frontend paradigms
 
