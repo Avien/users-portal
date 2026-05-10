@@ -7,15 +7,18 @@ A modern, scalable frontend architecture showcase, originally developed as a hig
 
 ## 📦 Project Overview
 
-This application demonstrates a scalable Angular architecture using Nx, NgRx, and Angular Signals.
+This Nx monorepo contains **two parallel implementations** of the same domain — a users-and-orders dashboard with real-time WebSocket updates:
 
-The UI displays a list of users and their associated orders. Selecting a user loads orders lazily, with per-user cache tracking to avoid redundant API calls while still allowing real-time updates.
+| App | Stack | Purpose |
+| :--- | :--- | :--- |
+| `apps/users-portal-angular` | Angular 19, NgRx, Signals, OnPush | Reference implementation |
+| `apps/users-portal-react` | React 19, TanStack Query, Zustand, Vite | Idiomatic React rebuild |
 
-The app now supports a WebSocket-driven order stream (`order-update`) that feeds NgRx in real time. Incoming socket events are normalized, merged with lazy API loads, and rendered reactively through selectors + signals.
+The UI displays a list of users and their associated orders. Selecting a user loads orders lazily with per-user caching. A WebSocket stream pushes live order updates that are merged into the cache without overwriting lazily loaded data. High-value and burst orders trigger toast notifications with auto-dismiss.
 
-The project focuses on clean architectural boundaries, reactive state management, and modern Angular best practices.
+The project demonstrates how the same domain and architectural patterns (facade, layered libs, module boundaries, reactive state) map across two fundamentally different frontend paradigms.
 
-## 🏗 Architectural Highlights
+## 🏗 Architectural Highlights (Angular App)
 
 * **Nx Monorepo:** Organized with strict boundaries between the App Shell (`users-portal`) and the domain libraries (`feature`, `ui`, `data-access`, `utils`), with architectural constraints enforced through Nx ESLint module boundary rules.
 * **Utils Library:** Hosts pure business logic utilities that are framework-agnostic, reusable, and independently unit tested, promoting clean separation between domain logic and framework-specific code.
@@ -43,13 +46,13 @@ The dashboard includes a real-time monitoring layer that turns streamed order ac
 
 ### Architecture split
 
-- **Pure monitoring rules (`libs/users/utils`)**  
-  `reduceOrderMonitoring()` and related helpers evaluate incoming order snapshots and return lightweight toast payloads.
-- **Facade orchestration (`libs/users/data-access`)**  
-  `UsersFacade` runs the monitoring effect, owns the notifications signal exposed on `$vm`, and keeps store interaction centralized.
-- **Notification mechanics service (`libs/users/data-access/src/lib/services`)**  
-  `OrderNotificationsService` handles notification ids, timestamps, auto-dismiss timers, manual dismiss, and cleanup.
-- **Feature/UI rendering (`libs/users/feature` + `libs/users/ui`)**  
+- **Pure monitoring rules (`libs/users` → `@portal/users/utils`)**  
+  `reduceOrderMonitoring()` and related helpers evaluate incoming order snapshots and return lightweight toast payloads. Shared by both apps.
+- **Angular — Facade orchestration (`libs/users-angular/data-access`)**  
+  `UsersFacade` runs the monitoring NgRx effect, owns the notifications signal on `$vm`, and keeps store interaction centralized. `OrderNotificationsService` handles ids, timestamps, auto-dismiss timers, and cleanup.
+- **React — Zustand store + `useOrdersStream` (`libs/users-react/data-access`)**  
+  `addNotification` / `dismissNotification` actions with module-level `dismissTimers` replace the Angular service. `useOrdersStream` (called once from `App`) runs `reduceOrderMonitoring` on each WS tick and dispatches to the store.
+- **Feature/UI rendering (both apps)**  
   Toasts are rendered via `toast-stack` from `vm.notifications`.
 
 ### Try it locally
@@ -102,111 +105,128 @@ UI Rendering
 ```
 
 ### Domain-Driven Library Structure
-The workspace is split into clear domain boundaries under `libs/users/`.
+
+The workspace is split into framework-specific libs under a shared domain root. Module boundary rules (Nx ESLint `@nx/enforce-module-boundaries`) are enforced via `type:` tags (layer direction) and `framework:` tags (no cross-framework imports).
 
 ```text
 apps/
-  users-portal       → Application shell
+  users-portal-angular   → Angular app shell
+  users-portal-react     → React app shell
 
-libs/users/
-  data-access        → NgRx store, effects, services, facade
-  feature            → Smart components connecting facade to UI
-  ui                 → Pure presentational components
-  utils              → Models, types and view models
+libs/
+  users/                 → @portal/users/utils — shared by both apps
+                           Pure TS: domain models, pure utils, canonical mock data
+
+  users-angular/
+    data-access          → NgRx store, effects, services, facade
+    feature              → Angular smart container
+    ui                   → Angular presentational components
+
+  users-react/
+    data-access          → TanStack Query API fns, Zustand store, useOrdersStream
+    feature              → useUsersFacade hook
+    ui                   → React presentational components (incl. virtual scroll)
 ```
 
-#### Library Responsibilities
+#### Layer Rules (both apps)
 
-| Library | Responsibility |
+| `type:` tag | Can depend on |
 | :--- | :--- |
-| `data-access` | State management (NgRx Store, Effects, Facade) |
-| `feature` | Smart components orchestrating UI logic |
-| `ui` | Pure presentation components |
-| `utils` | Shared models, interfaces and view models |
-
-This structure enforces **clean architectural boundaries** and improves maintainability.
+| `app` | `feature`, `data-access` |
+| `feature` | `ui`, `data-access`, `utils` |
+| `data-access` | `utils` |
+| `ui` | `utils` |
+| `utils` | `utils` |
 
 ---
 
 ## 💻 Local Development
 
-To get the project running locally, execute the following commands in your terminal:
-
 ```bash
-# 1. Install all dependencies
+# Install all dependencies
 npm install
+```
 
-# 2. Run the comprehensive Jest test suite
-npm run test
+**Angular app**
+```bash
+npm run validate:angular   # lint + test Angular projects
+npm run mock:ws            # start WS mock server at ws://localhost:3000/orders (optional)
+npm start                  # serve at http://localhost:4200
+```
 
-# 3. Start the local WS mock stream (optional but recommended for live updates)
-npm run mock:ws
+**React app**
+```bash
+npm run validate:react     # lint + test React projects
+npm run mock:ws            # same WS server works for both apps
+npm run start:react        # serve at http://localhost:4201
+```
 
-# 4. Serve the application locally
-npm start
-# The app will automatically open and reload at http://localhost:4200/
+**Both apps**
+```bash
+npm run validate           # lint + test everything
 ```
 
 ---
 
 ## 🛠 Available Commands
 
-This workspace is configured with custom npm scripts to streamline development and CI pipelines:
-
-| Command | Description |
-| :--- | :--- |
-| `npm start` | Serves the `users-portal` application locally at `http://localhost:4200/`. |
-| `npm run mock:ws` | Starts a local WebSocket server at `ws://localhost:3000/orders` that emits mock `order-update` events. |
-| `npm run format` | Runs Prettier to auto-format all code. |
-| `npm run lint` | Runs ESLint across the entire Nx monorepo. |
-| `npm run test` | Executes the Jest test suites across all isolated libraries. |
-| `npm run validate` | Runs both linting and testing. Ideal for pre-commit checks. |
-| `npm run build:prod` | Validates the codebase and generates the optimized production build. |
+| Command | Scope | Description |
+| :--- | :--- | :--- |
+| `npm start` | Angular | Serve Angular app at `http://localhost:4200` |
+| `npm run start:react` | React | Serve React app at `http://localhost:4201` |
+| `npm run mock:ws` | Both | Start WS mock server at `ws://localhost:3000/orders` |
+| `npm run format` | Both | Run Prettier across the workspace |
+| `npm run lint` | Both | ESLint across the entire monorepo |
+| `npm run test` | Both | Run all test suites (Jest + Vitest) |
+| `npm run validate` | Both | Lint + test everything |
+| `npm run validate:angular` | Angular | Lint + test Angular projects + shared lib |
+| `npm run validate:react` | React | Lint + test React projects + shared lib |
+| `npm run build:prod` | Angular | Validate + production build → `dist/apps/users-portal-angular` |
+| `npm run build:angular` | Angular | Same as `build:prod` |
+| `npm run build:react` | React | Validate + production build → `dist/users-portal-react` |
 
 ---
 
 ## 🧪 Testing
 
-The workspace uses **Jest** for testing. Libraries are tested independently to ensure isolated domain logic.
+Libraries are tested independently to ensure isolated domain logic.
 
-The test environment is configured for **Zoneless Angular testing** using:
-
+**Angular** — uses **Jest** with zoneless Angular test environment:
 ```typescript
 import { setupZonelessTestEnv } from 'jest-preset-angular/setup-env/zoneless';
-
-setupZonelessTestEnv({
-  errorOnUnknownElements: true,
-  errorOnUnknownProperties: true
-});
+setupZonelessTestEnv({ errorOnUnknownElements: true, errorOnUnknownProperties: true });
 ```
+
+**React** — uses **Vitest** with `@testing-library/react`:
+- `environment: jsdom` (configured per-lib in `vite.config.ts`)
+- Always set `gcTime: 0` in test `QueryClient` instances to prevent TanStack Query GC timers from keeping the test runner alive
+- Use `vi.useFakeTimers()` in specs that trigger Zustand `addNotification` (auto-dismiss timers)
+
+**Shared utils** — tested with **Jest** (framework-agnostic pure TS).
 
 ---
 
 ## 📝 Notes
 
-- The app is built using **Nx** for a **strict monorepo structure** and **Nx plugins** for efficient development workflows.
-- This project uses **mock data** for demonstration purposes. In a real-world application, the `UserService` would communicate with backend APIs via Angular's `HttpClient`.
-- Real-time updates are simulated locally through `tools/mock-orders-ws-server.mjs`; run `npm run mock:ws` before `npm start` to see streaming order creation.
-- The `UsersFacade` is responsible for managing the NgRx Store and triggering network requests. It abstracts the complexity of state management and API interactions.
-- The `UsersFacade` is also responsible for **smart caching** to avoid unnecessary network requests.
-- The `UsersFacade` is also responsible for **reactive UI updates** using Angular Signals.
-- The `UsersFacade` is also responsible for **strict separation of concerns** by hiding NgRx state from the UI components.
-- The `UsersFacade` is also responsible for **testing** by providing a **mock implementation** for the `UserService`.
-- The `UsersFacade` is also responsible for **performance optimization** by leveraging NgRx's **Entity** feature for normalized state management.
-- The `UsersFacade` is also responsible for **modularization** by splitting the business logic into separate services and reusable functions.
-- The `UsersFacade` supports all user CRUD opertaions for future enhancements, exposed via public apis.
+- Both apps use **mock data** served by `tools/mock-orders-ws-server.mjs` and in-memory API stubs. No real backend required.
+- Run `npm run mock:ws` before starting either app to see live order streaming.
+- **Angular** — `UsersFacade` abstracts all NgRx interactions (actions, selectors, effects) from the UI. Components only see Angular Signals from `$vm`.
+- **React** — `useUsersFacade()` plays the same role: it composes TanStack Query + Zustand and returns `UserOrdersVm & IUsersFacadeInteractions`. Components only see plain props.
+- Both facades share the same `UserOrdersVm` / `IUsersFacadeInteractions` contracts from `@portal/users/utils`, enforcing a consistent public surface across frameworks.
+- The orders list in the React app uses `@tanstack/react-virtual` for virtualized rendering (equivalent to Angular CDK `cdk-virtual-scroll-viewport`).
 
 
 ## 📌 Summary
 
 This project demonstrates:
-* Scalable **Nx monorepo architecture**
-* Clean **domain-driven library structure**
-* **NgRx Entity + Selectors** for normalized state
-* **WebSocket + NgRx Effects** for real-time order ingestion
-* **Angular Signals** for reactive UI
-* **Facade pattern** for strict separation of concerns
-* Modern Angular features and best practices
+* Scalable **Nx monorepo** with two parallel framework implementations
+* **Shared domain contracts** (`@portal/users/utils`) consumed by both Angular and React
+* **Module boundary enforcement** via Nx ESLint `type:` + `framework:` tags
+* **Angular** — NgRx Entity + Selectors, Angular Signals, OnPush, CDK Virtual Scroll
+* **React** — TanStack Query, Zustand, `@tanstack/react-virtual`, `React.memo`
+* **Facade pattern** in both frameworks: same public surface (`UserOrdersVm`), idiomatic internals
+* **WebSocket stream** with pending-buffer pattern and real-time order monitoring (shared pure logic)
+* **Scoped CI scripts** — `validate:angular` / `validate:react` / `build:angular` / `build:react`
 
 
 ## 🤖 AI-Assisted Development
