@@ -1,0 +1,29 @@
+.orders-card {
+  padding: 1rem;
+  border: 1px solid #d8dbe2;
+  border-radius: 12px;
+  background: #fff;
+}
+
+h2 {
+  margin: 0 0 0.5rem;
+}
+
+.orders-viewport {
+  height: min(420px, 55vh);
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #eef2f6;
+  border-radius: 8px;
+  contain: strict;
+}
+
+.orders-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: border-box;
+  height: 52px;
+  padding: 0 10px;
+  border-bottom: 1px solid #eef2f6;
+}

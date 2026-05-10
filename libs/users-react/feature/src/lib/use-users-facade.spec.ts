@@ -3,7 +3,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement } from 'react';
 import { useUsersFacade } from './use-users-facade';
-import * as dataAccess from '@fmr/users-react/data-access';
+import * as dataAccess from '@portal/users-react/data-access';
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
@@ -17,7 +17,7 @@ const MOCK_ORDERS = [
   { id: 2, userId: 1, total: 25 },
 ];
 
-vi.mock('@fmr/users-react/data-access', () => ({
+vi.mock('@portal/users-react/data-access', () => ({
   fetchUsers: vi.fn(),
   fetchOrdersByUser: vi.fn(),
 }));

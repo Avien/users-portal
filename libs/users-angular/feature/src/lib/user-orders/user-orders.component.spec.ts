@@ -1,8 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
 import { UserOrdersComponent } from './user-orders.component';
-import { UsersFacade } from '@fmr/users-angular/data-access';
-import { UserOrdersVm } from '@fmr/users-angular/utils';
+import { UsersFacade } from '@portal/users-angular/data-access';
+import { UserOrdersVm } from '@portal/users-angular/utils';
 
 describe('UserOrdersComponent', () => {
   let component: UserOrdersComponent;

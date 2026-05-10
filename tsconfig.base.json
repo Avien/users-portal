@@ -15,13 +15,13 @@
     "skipDefaultLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "@fmr/users-angular/data-access": ["libs/users-angular/data-access/src/index.ts"],
-      "@fmr/users-angular/ui": ["libs/users-angular/ui/src/index.ts"],
-      "@fmr/users-angular/feature": ["libs/users-angular/feature/src/index.ts"],
-      "@fmr/users-angular/utils": ["libs/users-angular/utils/src/index.ts"],
-      "@fmr/users-react/data-access": ["libs/users-react/data-access/src/index.ts"],
-      "@fmr/users-react/feature": ["libs/users-react/feature/src/index.ts"],
-      "@fmr/users-react/ui": ["libs/users-react/ui/src/index.ts"]
+      "@portal/users-angular/data-access": ["libs/users-angular/data-access/src/index.ts"],
+      "@portal/users-angular/ui": ["libs/users-angular/ui/src/index.ts"],
+      "@portal/users-angular/feature": ["libs/users-angular/feature/src/index.ts"],
+      "@portal/users-angular/utils": ["libs/users-angular/utils/src/index.ts"],
+      "@portal/users-react/data-access": ["libs/users-react/data-access/src/index.ts"],
+      "@portal/users-react/feature": ["libs/users-react/feature/src/index.ts"],
+      "@portal/users-react/ui": ["libs/users-react/ui/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "tmp"]

@@ -1,4 +1,4 @@
-import { Order, User } from '@fmr/users-angular/utils';
+import { Order, User } from '@portal/users-angular/utils';
 
 export const MOCK_USERS: User[] = [
   { id: 1, name: 'Avi Cohen' },

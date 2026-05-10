@@ -1,4 +1,4 @@
-import { UserOrders } from '@fmr/users-react/feature';
+import { UserOrders } from '@portal/users-react/feature';
 
 export function App() {
   return <UserOrders />;

@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core';
-import { UserOrdersComponent } from '@fmr/users-angular/feature';
+import { UserOrdersComponent } from '@portal/users-angular/feature';
 
 @Component({
   selector: 'app-root',

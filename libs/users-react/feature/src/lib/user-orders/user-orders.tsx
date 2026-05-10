@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import { useUsersFacade } from '../use-users-facade';
-import { UserButtons, SummaryCards, OrdersCard } from '@fmr/users-react/ui';
+import { UserButtons, UserName, UserTotalOrders, OrdersCard } from '@portal/users-react/ui';
 import styles from './user-orders.module.css';
 
 export function UserOrders() {
@@ -23,7 +23,10 @@ export function UserOrders() {
 
       {selectedUserSummary ? (
         <>
-          <SummaryCards summary={selectedUserSummary} />
+          <div style={summaryGridStyle}>
+            <UserName userName={selectedUserSummary.userName} />
+            <UserTotalOrders totalAmount={selectedUserSummary.totalAmount} />
+          </div>
           <OrdersCard orders={orders} loading={ordersLoading(loading, selectedUserId)} loaded={loaded} error={error} />
         </>
       ) : !loading && loaded ? (
@@ -42,5 +45,11 @@ function ordersLoading(globalLoading: boolean, selectedUserId: number | null): b
 const shellStyle: CSSProperties = { maxWidth: 900, margin: '0 auto', padding: '2rem' };
 const pageHeaderStyle: CSSProperties = { marginBottom: '1.5rem' };
 const subtitleRowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8 };
+const summaryGridStyle: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+  gap: '1rem',
+  marginBottom: '1.5rem',
+};
 const errorStyle: CSSProperties = { color: '#dc2626' };
 const emptyStateStyle: CSSProperties = { padding: '1rem', color: '#667085' };

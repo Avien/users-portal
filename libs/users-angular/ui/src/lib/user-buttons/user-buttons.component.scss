@@ -1,0 +1,19 @@
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.user-button {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  border-radius: 999px;
+  padding: 0.65rem 1rem;
+  cursor: pointer;
+}
+
+.user-button.active {
+  border-color: #0f172a;
+  background: #e2e8f0;
+}

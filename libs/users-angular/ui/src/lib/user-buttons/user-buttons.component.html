@@ -1,0 +1,12 @@
+<div class="actions">
+  @for (user of users(); track user.id) {
+    <button
+      type="button"
+      class="user-button"
+      [class.active]="selectedUserId() === user.id"
+      (click)="userSelected.emit(user.id)"
+    >
+      {{ user.name }}
+    </button>
+  }
+</div>

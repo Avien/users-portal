@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import type { CSSProperties } from 'react';
-import type { Order } from '@fmr/users-angular/utils';
+import type { Order } from '@portal/users-angular/utils';
 
 interface OrdersCardProps {
   orders: Order[];

@@ -1,9 +1,9 @@
 import { Injectable, WritableSignal } from '@angular/core';
-import { Notification, NotificationSeverity, OrderMonitoringToastPayload } from '@fmr/users-angular/utils';
+import { Notification, NotificationSeverity, OrderMonitoringToastPayload } from '@portal/users-angular/utils';
 
 /**
  * Order notification UI mechanics: ids, auto-dismiss timers, list mutations.
- * Domain rules for *when* to notify live in `@fmr/users-angular/utils` (`reduceOrderMonitoring`);
+ * Domain rules for *when* to notify live in `@portal/users-angular/utils` (`reduceOrderMonitoring`);
  * the facade owns the writable notification list exposed on `$vm`.
  */
 @Injectable({ providedIn: 'root' })

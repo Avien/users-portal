@@ -17,57 +17,11 @@ h2 {
   margin: 0 0 0.5rem;
 }
 
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  margin-bottom: 1.5rem;
-}
-
-.user-button {
-  border: 1px solid #cbd5e1;
-  background: #fff;
-  border-radius: 999px;
-  padding: 0.65rem 1rem;
-  cursor: pointer;
-}
-
-.user-button.active {
-  border-color: #0f172a;
-  background: #e2e8f0;
-}
-
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
   margin-bottom: 1.5rem;
-}
-
-.orders-card {
-  padding: 1rem;
-  border: 1px solid #d8dbe2;
-  border-radius: 12px;
-  background: #fff;
-}
-
-.orders-viewport {
-  height: min(420px, 55vh);
-  width: 100%;
-  box-sizing: border-box;
-  border: 1px solid #eef2f6;
-  border-radius: 8px;
-  contain: strict;
-}
-
-.orders-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  box-sizing: border-box;
-  height: 52px;
-  padding: 0 10px;
-  border-bottom: 1px solid #eef2f6;
 }
 
 .empty-state {

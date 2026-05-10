@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { delay, Observable, of } from 'rxjs';
-import { Order, User } from '@fmr/users-angular/utils';
+import { Order, User } from '@portal/users-angular/utils';
 import { MOCK_ORDERS, MOCK_USERS } from './user.mocks';
 /**
  * Mock data-access service for the assignment.

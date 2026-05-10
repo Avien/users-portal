@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { IUsersFacadeInteractions, UserOrdersVm } from '@fmr/users-angular/utils';
-import { buildUserTotalOrdersVm } from '@fmr/users-angular/utils';
-import { fetchUsers, fetchOrdersByUser } from '@fmr/users-react/data-access';
+import type { IUsersFacadeInteractions, UserOrdersVm } from '@portal/users-angular/utils';
+import { buildUserTotalOrdersVm } from '@portal/users-angular/utils';
+import { fetchUsers, fetchOrdersByUser } from '@portal/users-react/data-access';
 
 export function useUsersFacade(): UserOrdersVm & IUsersFacadeInteractions {
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);

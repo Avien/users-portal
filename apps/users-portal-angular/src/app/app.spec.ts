@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { App } from './app';
-import { provideUsersState } from '@fmr/users-angular/data-access';
+import { provideUsersState } from '@portal/users-angular/data-access';
 
 // 1. Import the root initializers
 import { provideStore } from '@ngrx/store';

@@ -1,4 +1,4 @@
-import type { User, Order } from '@fmr/users-angular/utils';
+import type { User, Order } from '@portal/users-angular/utils';
 
 export const USERS: User[] = [
   { id: 1, name: 'Alice Johnson' },

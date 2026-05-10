@@ -3,7 +3,7 @@ import { MockStore, provideMockStore } from '@ngrx/store/testing';
 import { UsersFacade } from './users.facade';
 import { UsersActions } from '../+state/users.actions';
 import { UsersSelectors } from '../+state/users.selectors';
-import { User, Order, UserOrderSummary } from '@fmr/users-angular/utils';
+import { User, Order, UserOrderSummary } from '@portal/users-angular/utils';
 import { OrderNotificationsService } from '../services/order-notifications.service';
 
 describe('UsersFacade', () => {

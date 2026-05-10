@@ -1,4 +1,4 @@
-import type { Order } from '@fmr/users-angular/utils';
+import type { Order } from '@portal/users-angular/utils';
 import { ORDERS } from '../mock/data.mock';
 
 export function fetchOrdersByUser(userId: number): Promise<Order[]> {

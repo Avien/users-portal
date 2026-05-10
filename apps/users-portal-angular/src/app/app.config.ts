@@ -1,7 +1,7 @@
 import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { provideStoreDevtools } from '@ngrx/store-devtools';
-import { provideUsersState } from '@fmr/users-angular/data-access';
+import { provideUsersState } from '@portal/users-angular/data-access';
 import { appRoutes } from './app.routes';
 import { provideStore } from '@ngrx/store';
 import { provideEffects } from '@ngrx/effects';
