@@ -10,7 +10,7 @@ import {
 } from '@portal/users-angular/ui';
 
 @Component({
-  selector: 'fmr-user-orders',
+  selector: 'user-orders',
   standalone: true,
   imports: [
     ToastStackComponent,

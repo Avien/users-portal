@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
 import { Notification } from '@portal/users/utils';
 
 @Component({
-  selector: 'fmr-toast-stack',
+  selector: 'toast-stack',
   standalone: true,
   templateUrl: './toast-stack.component.html',
   styleUrl: './toast-stack.component.scss',

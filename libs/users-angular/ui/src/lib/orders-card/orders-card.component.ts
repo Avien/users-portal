@@ -6,7 +6,7 @@ import { Order } from '@portal/users/utils';
 const ORDERS_VIRTUAL_ROW_HEIGHT_PX = 52;
 
 @Component({
-  selector: 'fmr-orders-card',
+  selector: 'orders-card',
   standalone: true,
   templateUrl: './orders-card.component.html',
   styleUrl: './orders-card.component.scss',
