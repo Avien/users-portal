@@ -10,17 +10,13 @@ const AUTO_DISMISS_MS: Record<NotificationSeverity, number> = {
 const dismissTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 interface UsersStore {
-  selectedUserId: number | null;
   notifications: Notification[];
-  selectUser: (id: number) => void;
   addNotification: (payload: Omit<Notification, 'id' | 'timestamp'>) => void;
   dismissNotification: (id: string) => void;
 }
 
 export const useUsersStore = create<UsersStore>((set, get) => ({
-  selectedUserId: null,
   notifications: [],
-  selectUser: (id) => set({ selectedUserId: id }),
   addNotification: (payload) => {
     const id = crypto.randomUUID();
     const notification: Notification = { ...payload, id, timestamp: Date.now() };

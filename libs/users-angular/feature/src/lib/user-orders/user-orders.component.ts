@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, OnInit, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, Signal } from '@angular/core';
 import { UsersFacade } from '@portal/users-angular/data-access';
 import { UserOrdersVm } from '@portal/users/utils';
 import {
@@ -10,7 +10,7 @@ import {
 } from '@portal/users-angular/ui';
 
 @Component({
-  selector: 'fmr-user-orders',
+  selector: 'user-orders',
   standalone: true,
   imports: [
     ToastStackComponent,
@@ -23,14 +23,10 @@ import {
   styleUrl: './user-orders.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class UserOrdersComponent implements OnInit {
+export class UserOrdersComponent {
   private readonly facade = inject(UsersFacade);
 
   readonly $vm: Signal<UserOrdersVm> = this.facade.$vm;
-
-  ngOnInit(): void {
-    this.facade.loadUsers();
-  }
 
   selectUser(userId: number): void {
     this.facade.selectUser(userId);

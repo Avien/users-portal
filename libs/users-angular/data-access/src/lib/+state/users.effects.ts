@@ -1,6 +1,6 @@
 import { inject, Injectable } from '@angular/core';
 import { Actions, createEffect, ofType } from '@ngrx/effects';
-import { catchError, EMPTY, filter, map, of, switchMap } from 'rxjs';
+import { catchError, EMPTY, map, of, switchMap } from 'rxjs';
 import { UserService } from '../services/user.service';
 import { UsersActions } from './users.actions';
 import { OrdersService } from '../services/orders.service';
@@ -20,15 +20,6 @@ export class UsersEffects {
           catchError(() => of(UsersActions.loadUsersFailure({ error: 'Failed to load users' })))
         )
       )
-    )
-  );
-
-  selectFirstUserAfterLoad$ = createEffect(() =>
-    this.actions$.pipe(
-      ofType(UsersActions.loadUsersSuccess),
-      map(({ users }) => users[0]?.id),
-      filter((userId): userId is number => userId != null),
-      map((userId) => UsersActions.loadUserOrders({ userId }))
     )
   );
 

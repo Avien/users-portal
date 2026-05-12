@@ -1,4 +1,5 @@
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { IUsersFacadeInteractions, UserOrdersVm, Order } from '@portal/users/utils';
 import { buildUserTotalOrdersVm } from '@portal/users/utils';
@@ -6,9 +7,12 @@ import { fetchUsers, fetchOrdersByUser, useUsersStore, drainPendingOrders } from
 
 export function useUsersFacade(): UserOrdersVm & IUsersFacadeInteractions {
   const queryClient = useQueryClient();
-  const selectedUserId = useUsersStore((s) => s.selectedUserId);
+  const { userId } = useParams<{ userId: string }>();
+  const selectedUserId = userId ? Number(userId) : null;
+  const navigate = useNavigate();
+  const selectUser = useCallback((id: number) => navigate(`/users/${id}`), [navigate]);
+
   const notifications = useUsersStore((s) => s.notifications);
-  const selectUser = useUsersStore((s) => s.selectUser);
   const dismissNotification = useUsersStore((s) => s.dismissNotification);
 
   const usersQuery = useQuery({
@@ -33,11 +37,12 @@ export function useUsersFacade(): UserOrdersVm & IUsersFacadeInteractions {
     [selectedUser, ordersQuery.data]
   );
 
+  // Auto-navigate to first user when users load and no userId in URL
   useEffect(() => {
-    if (selectedUserId === null && usersQuery.data && usersQuery.data.length > 0) {
-      selectUser(usersQuery.data[0].id);
+    if (!userId && usersQuery.data && usersQuery.data.length > 0) {
+      navigate(`/users/${usersQuery.data[0].id}`, { replace: true });
     }
-  }, [usersQuery.data, selectedUserId, selectUser]);
+  }, [usersQuery.data, userId, navigate]);
 
   // Merge any WS orders that arrived before this user's API fetch completed
   useEffect(() => {

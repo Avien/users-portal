@@ -8,7 +8,6 @@ describe('UserOrdersComponent', () => {
   let component: UserOrdersComponent;
   let fixture: ComponentFixture<UserOrdersComponent>;
   let mockFacade: {
-    loadUsers: jest.Mock;
     selectUser: jest.Mock;
     dismissOrderNotification: jest.Mock;
     $vm: ReturnType<typeof signal<UserOrdersVm>>;
@@ -16,7 +15,6 @@ describe('UserOrdersComponent', () => {
 
   beforeEach(async () => {
     mockFacade = {
-      loadUsers: jest.fn(),
       selectUser: jest.fn(),
       dismissOrderNotification: jest.fn(),
       $vm: signal<UserOrdersVm>({
@@ -28,21 +26,16 @@ describe('UserOrdersComponent', () => {
         loaded: false,
         error: null,
         notifications: []
-      })
+      }),
     };
 
     await TestBed.configureTestingModule({
-      imports: [UserOrdersComponent], // Standalone components go in imports
-      providers: [
-        // 2. Override the real Facade with our Mock
-        { provide: UsersFacade, useValue: mockFacade }
-      ]
+      imports: [UserOrdersComponent],
+      providers: [{ provide: UsersFacade, useValue: mockFacade }],
     }).compileComponents();
 
     fixture = TestBed.createComponent(UserOrdersComponent);
     component = fixture.componentInstance;
-
-    // 3. Trigger initial data binding and ngOnInit
     fixture.detectChanges();
   });
 
@@ -50,15 +43,13 @@ describe('UserOrdersComponent', () => {
     expect(component).toBeTruthy();
   });
 
-  it('should call loadUsers from the facade on initialization', () => {
-    // Because we called fixture.detectChanges() in beforeEach, ngOnInit has run
-    expect(mockFacade.loadUsers).toHaveBeenCalledTimes(1);
+  it('should call selectUser on the facade when triggered', () => {
+    component.selectUser(42);
+    expect(mockFacade.selectUser).toHaveBeenCalledWith(42);
   });
 
-  it('should call selectUser on the facade when triggered', () => {
-    const testUserId = 42;
-    component.selectUser(testUserId);
-
-    expect(mockFacade.selectUser).toHaveBeenCalledWith(testUserId);
+  it('should call dismissOrderNotification on the facade when triggered', () => {
+    component.dismissOrderNotification('n-1');
+    expect(mockFacade.dismissOrderNotification).toHaveBeenCalledWith('n-1');
   });
 });

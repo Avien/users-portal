@@ -33,7 +33,9 @@ const actionsStyle: CSSProperties = {
 };
 
 const buttonStyle: CSSProperties = {
-  border: '1px solid #cbd5e1',
+  borderWidth: '1px',
+  borderStyle: 'solid',
+  borderColor: '#cbd5e1',
   background: '#fff',
   borderRadius: 999,
   padding: '0.65rem 1rem',

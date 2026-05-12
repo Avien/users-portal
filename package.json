@@ -11,7 +11,7 @@
     "mock:ws": "node tools/mock-orders-ws-server.mjs",
     "validate": "npm run lint && npm run test",
     "validate:angular": "nx run-many -t lint test --projects=tag:framework:angular,tag:framework:shared",
-    "validate:react": "nx run-many -t lint test --projects=tag:framework:react,tag:framework:shared",
+    "validate:react": "tsc --noEmit -p apps/users-portal-react/tsconfig.app.json && nx run-many -t lint test --projects=tag:framework:react,tag:framework:shared",
     "build:angular": "npm run validate:angular && nx build users-portal-angular",
     "build:react": "npm run validate:react && nx build users-portal-react",
     "build:prod": "npm run build:angular"
@@ -34,6 +34,7 @@
     "@tanstack/react-virtual": "^3.13.24",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-router-dom": "^7.15.0",
     "rxjs": "~7.8.0",
     "zustand": "^5.0.13"
   },
