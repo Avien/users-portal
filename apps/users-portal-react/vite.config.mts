@@ -1,4 +1,5 @@
 /// <reference types='vitest' />
+import path from 'path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { nxViteTsPaths } from '@nx/vite/plugins/nx-tsconfig-paths.plugin';
@@ -21,7 +22,7 @@ export default defineConfig(() => ({
   //   plugins: () => [ nxViteTsPaths() ],
   // },
   build: {
-    outDir: '../dist/users-portal-react',
+    outDir: path.resolve(import.meta.dirname, '../../dist/users-portal-react'),
     emptyOutDir: true,
     reportCompressedSize: true,
     commonjsOptions: {
