@@ -8,7 +8,8 @@ import {
 } from '@portal/users/utils';
 import { useUsersStore } from '../store/users.store';
 
-const ORDERS_SOCKET_URL = 'ws://localhost:3000/orders';
+const ORDERS_SOCKET_URL =
+  import.meta.env['VITE_ORDERS_WS_URL'] ?? 'ws://localhost:3000/orders';
 
 interface OrderStreamEvent {
   type: string;
