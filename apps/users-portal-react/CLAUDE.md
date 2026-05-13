@@ -22,7 +22,9 @@ Inherits workspace rules from `/CLAUDE.md`. This file covers React-specific conv
 - [x] Nx libs — `users-react/data-access`, `feature`, `ui` all generated and tagged
 
 ### Planned
-- [ ] React Router — route-based navigation
+- [x] React Router — /users/:userId, BrowserRouter, URL-driven selectedUserId
+- [x] Error Boundaries — ErrorBoundary class component in users-react/ui, wraps Routes in app.tsx
+- [x] Vite env var — VITE_ORDERS_WS_URL, falls back to DEFAULT_ORDERS_WS_URL from shared utils
 
 ---
 
