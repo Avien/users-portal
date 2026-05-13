@@ -1,4 +1,2 @@
-{
-  "outputDirectory": "dist/users-portal-react",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+{"rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
 }
