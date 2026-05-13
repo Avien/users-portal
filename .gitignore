@@ -48,3 +48,4 @@ vite.config.*.timestamp*
 # local env overrides — never commit
 .env.local
 .env.*.local
+.vercel
