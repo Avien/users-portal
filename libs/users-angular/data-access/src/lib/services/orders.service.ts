@@ -1,7 +1,7 @@
 import { inject, Injectable, InjectionToken } from '@angular/core';
 import { filter, Observable, map } from 'rxjs';
 import { webSocket } from 'rxjs/webSocket';
-import { Order } from '@portal/users/utils';
+import { Order, DEFAULT_ORDERS_WS_URL } from '@portal/users/utils';
 
 interface OrderStreamEvent {
   type: 'order-update';
@@ -10,7 +10,7 @@ interface OrderStreamEvent {
 
 /** Override in tests or `app.config` when the mock server URL differs. */
 export const ORDERS_SOCKET_URL = new InjectionToken<string>('ORDERS_SOCKET_URL', {
-  factory: () => 'ws://localhost:3000/orders'
+  factory: () => DEFAULT_ORDERS_WS_URL
 });
 
 @Injectable({ providedIn: 'root' })

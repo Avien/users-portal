@@ -7,6 +7,7 @@ import { createElement } from 'react';
 import { useOrdersStream, drainPendingOrders } from './use-orders-stream';
 import { useUsersStore } from '../store/users.store';
 import type { Order, User } from '@portal/users/utils';
+import { DEFAULT_ORDERS_WS_URL } from '@portal/users/utils';
 
 // ─── WebSocket mock ───────────────────────────────────────────────────────────
 
@@ -76,7 +77,7 @@ describe('useOrdersStream', () => {
     renderHook(() => useOrdersStream(), { wrapper });
 
     expect(MockWebSocket.instances).toHaveLength(1);
-    expect(MockWebSocket.latest().url).toBe('ws://localhost:3000/orders');
+    expect(MockWebSocket.latest().url).toBe(DEFAULT_ORDERS_WS_URL);
   });
 
   it('closes the WebSocket on unmount', () => {

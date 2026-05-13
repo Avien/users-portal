@@ -5,11 +5,12 @@ import {
   createOrderMonitoringState,
   reduceOrderMonitoring,
   ORDER_BURST_WINDOW_MS,
+  DEFAULT_ORDERS_WS_URL,
 } from '@portal/users/utils';
 import { useUsersStore } from '../store/users.store';
 
 const ORDERS_SOCKET_URL =
-  import.meta.env['VITE_ORDERS_WS_URL'] ?? 'ws://localhost:3000/orders';
+  import.meta.env['VITE_ORDERS_WS_URL'] ?? DEFAULT_ORDERS_WS_URL;
 
 interface OrderStreamEvent {
   type: string;
