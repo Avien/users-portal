@@ -4,7 +4,7 @@
 This repository explores how the same frontend domain can evolve across:
 
 - Angular standalone architecture
-- React idiomatic architecture
+- Idiomatic React architecture
 - Shared framework-agnostic domain utilities
 - Future Microfrontend compositions
 - Agentic AI workflows for cross-framework architectural exploration and implementation
