@@ -7,6 +7,7 @@ This repository explores how the same frontend domain can evolve across:
 - React idiomatic architecture
 - Shared framework-agnostic domain utilities
 - Future Microfrontend compositions
+- Agentic AI workflows for cross-framework architectural exploration and implementation
 
 The goal is not direct framework translation, but understanding how the same architectural responsibilities map differently across rendering and state paradigms.
 
