@@ -17,7 +17,7 @@ This repository explores how the same frontend domain can evolve across:
   <img src="https://img.shields.io/badge/-Angular-DD0031?style=for-the-badge&logo=angular&logoColor=white" />
 </a>
 
-<a href="https://github.com/Avien/users-portal">
+<a href="https://users-portal-react.vercel.app">
   <img src="https://img.shields.io/badge/-React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB" />
 </a>
 
