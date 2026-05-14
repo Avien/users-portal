@@ -1,9 +1,24 @@
 
 # 👤 Users Portal
 
-A modern, scalable frontend architecture showcase, originally developed as a high-performance trading-style data visualization system.
+This repository explores how the same frontend domain can evolve across:
 
-**🚀 [Live Demo](https://users-portal-system.vercel.app/)**
+- Angular standalone architecture
+- React idiomatic architecture
+- Shared framework-agnostic domain utilities
+- Future Microfrontend compositions
+
+The goal is not direct framework translation, but understanding how the same architectural responsibilities map differently across rendering and state paradigms.
+
+**🚀 Live Demo**
+
+<a href="https://users-portal-angular.vercel.app">
+  <img src="https://img.shields.io/badge/-Angular-DD0031?style=for-the-badge&logo=angular&logoColor=white" />
+</a>
+
+<a href="https://github.com/Avien/users-portal">
+  <img src="https://img.shields.io/badge/-React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB" />
+</a>
 
 ## 📦 Project Overview
 
