@@ -6,11 +6,11 @@ This repository explores how the same frontend domain can evolve across:
 - Angular standalone architecture
 - Idiomatic React architecture
 - Shared framework-agnostic domain utilities
-- Future Microfrontend compositions
+- Cross-framework Microfrontend compositions
 - Agentic AI workflows for cross-framework architectural exploration and implementation
 
-The goal is not direct framework translation, but understanding how the same architectural responsibilities map differently across rendering and state paradigms.
-
+> The goal is not direct framework translation, but understanding how the same architectural responsibilities map differently across rendering and state paradigms.
+> 
 **🚀 Live Demo**
 
 <a href="https://users-portal-angular.vercel.app">
