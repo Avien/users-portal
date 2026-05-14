@@ -256,7 +256,7 @@ This project demonstrates:
 * **Scoped CI scripts** — `validate:angular` / `validate:react` / `build:angular` / `build:react`
 
 
-## 🤖 AI-Assisted Development
+## 🤖 Agentic AI Development
 
 This project was built across two phases, each with a different AI pairing:
 
