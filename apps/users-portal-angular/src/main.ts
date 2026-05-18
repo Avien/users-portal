@@ -10,7 +10,7 @@ const reactRemoteUrl =
 
 init({
   name: 'angular-host',
-  remotes: [{ name: 'react-users', entry: reactRemoteUrl }],
+  remotes: [{ name: 'react-users', entry: reactRemoteUrl, type: 'module' }],
 });
 
 bootstrapApplication(App, appConfig).catch((err) => console.error(err));
