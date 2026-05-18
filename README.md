@@ -13,6 +13,10 @@ This repository explores how the same frontend domain can evolve across:
 > 
 **🚀 Live Demo**
 
+<a href="https://users-portal-shell.vercel.app">
+  <img src="https://img.shields.io/badge/-Shell-6366f1?style=for-the-badge&logoColor=white" />
+</a>
+
 <a href="https://users-portal-angular.vercel.app">
   <img src="https://img.shields.io/badge/-Angular-DD0031?style=for-the-badge&logo=angular&logoColor=white" />
 </a>
@@ -23,12 +27,15 @@ This repository explores how the same frontend domain can evolve across:
 
 ## 📦 Project Overview
 
-This Nx monorepo contains **two parallel implementations** of the same domain — a users-and-orders dashboard with real-time WebSocket updates:
+This Nx monorepo contains **two parallel implementations** of the same domain — a users-and-orders dashboard with real-time WebSocket updates — plus a vanilla JS shell that composes them as Microfrontends:
 
 | App | Stack | Purpose |
 | :--- | :--- | :--- |
-| `apps/users-portal-angular` | Angular 19, NgRx, Signals, OnPush | Reference implementation |
-| `apps/users-portal-react` | React 19, TanStack Query, Zustand, Vite | Idiomatic React rebuild |
+| `apps/portal-shell` | Vanilla JS, no build step | Landing page — mode selector, redirects to any app |
+| `apps/users-portal-angular` | Angular 19, NgRx, Signals, OnPush | Reference implementation + Hybrid MFE host |
+| `apps/users-portal-react` | React 19, TanStack Query, Zustand, Vite | Idiomatic React rebuild + MFE remote |
+
+The three apps are deployed as independent Vercel projects and compose at runtime via Module Federation 2.0.
 
 The UI displays a list of users and their associated orders. Selecting a user loads orders lazily with per-user caching. A WebSocket stream pushes live order updates that are merged into the cache without overwriting lazily loaded data. High-value and burst orders trigger toast notifications with auto-dismiss.
 
@@ -58,6 +65,77 @@ The project demonstrates how the same domain and architectural patterns (facade,
 * **`React.memo` + `useMemo` as OnPush + Selectors:** Presentational components wrapped in `React.memo` only re-render when props change. All derived values (selected user, order summary) are memoised in the facade — equivalent to NgRx memoised selectors.
 * **Virtual scroll:** The orders list uses `@tanstack/react-virtual` (headless, same ecosystem as TanStack Query) for fixed-size row virtualisation — the React equivalent of Angular CDK `cdk-virtual-scroll-viewport`.
 * **Notifications via Zustand actions + module-level timers:** `addNotification` / `dismissNotification` with a module-level `dismissTimers` Map replaces Angular's `OrderNotificationsService` class — no extra service abstraction needed since the Zustand store IS the singleton.
+
+---
+
+## 🔀 Hybrid Microfrontend Architecture
+
+The Hybrid mode runs React inside Angular using **Module Federation 2.0** — no iframes, no build-time coupling, independent deployments.
+
+### How it fits together
+
+```
+portal-shell (vanilla JS)
+  ├── → /users  →  users-portal-angular (Full Angular)
+  ├── → /users  →  users-portal-react   (Full React)
+  └── → /hybrid →  users-portal-angular (host)
+                       └── /hybrid route → ReactWrapperComponent
+                                              └── loadRemote('react-users/mount')
+                                                    └── users-portal-react (remote)
+                                                          mount(container, { initialPath: '/users' })
+```
+
+### Packages
+
+| Package | Role |
+| :--- | :--- |
+| `@module-federation/vite` | Vite plugin — builds React app as ES module remote, generates `remoteEntry.js` |
+| `@module-federation/runtime` | Browser runtime — loaded in Angular, resolves and imports the remote |
+
+### React remote — `mount()` API
+
+The React app exposes a single framework-agnostic function via `src/mount.tsx`:
+
+```ts
+export function mount(
+  container: HTMLElement,
+  { initialPath }: { initialPath: string }
+): () => void
+```
+
+- **Owns everything**: `ReactDOM.createRoot`, `QueryClientProvider`, `MemoryRouter`
+- **Returns an unmount function** — Angular calls it in `ngOnDestroy`
+- **Module-scope `QueryClient` singleton** — survives Angular mount/unmount cycles without resetting cache
+- **Receives `initialPath`**, not domain props — React handles all internal navigation
+
+### Angular host — framework-agnostic wrapper
+
+`ReactWrapperComponent` has zero React knowledge — no React imports, no ReactDOM:
+
+```ts
+async ngAfterViewInit() {
+  const mod = await loadRemote<{ mount: MountFn }>('react-users/mount');
+  this.unmount = mod!.mount(this.container.nativeElement, { initialPath: '/users' });
+}
+```
+
+`init()` in `main.ts` registers the remote URL at boot but makes no network request. The actual `remoteEntry.js` fetch only happens when the user navigates to `/hybrid`.
+
+### Why `type: 'module'` matters
+
+`@module-federation/vite` generates ES module remotes with **named exports** (`export { get, init }`). The runtime default (`type: 'global'`) loads via a classic `<script>` tag and looks for a `window['react-users']` global — which is never set. `type: 'module'` switches to `import(url)` and reads the named exports directly.
+
+```ts
+// apps/users-portal-angular/src/main.ts
+init({
+  name: 'angular-host',
+  remotes: [{ name: 'react-users', entry: reactRemoteUrl, type: 'module' }],
+});
+```
+
+### Dev mode — React Fast Refresh preamble
+
+In dev mode, `@vitejs/plugin-react` injects a `window.__vite_plugin_react_preamble_installed__` check into every JSX file. Normally injected by Vite's HTML transform — which never runs in the Angular host. `src/federation-dev-preamble.ts` installs stub globals as a **side-effect import at the top of `mount.tsx`**, before any component module evaluates. HMR doesn't work for the remote in this mode — that's expected.
 
 ---
 
@@ -210,8 +288,9 @@ The workspace is split into framework-specific libs under a shared domain root. 
 
 ```text
 apps/
-  users-portal-angular   → Angular app shell
-  users-portal-react     → React app shell
+  portal-shell           → Vanilla JS landing page (no build step)
+  users-portal-angular   → Angular app shell + MFE host (/hybrid route)
+  users-portal-react     → React app shell + MFE remote (exposes mount())
 
 libs/
   users/                 → @portal/users/utils — shared by both apps
@@ -247,21 +326,42 @@ libs/
 npm install
 ```
 
-**Angular app**
+**Angular app** — `http://localhost:4200`
 ```bash
 npm run validate:angular   # lint + test Angular projects
 npm run mock:ws            # start WS mock server at ws://localhost:3000/orders (optional)
-npm start                  # serve at http://localhost:4200
+npm run start:angular      # serve Angular app
 ```
 
-**React app**
+**React app** — `http://localhost:4201`
 ```bash
 npm run validate:react     # lint + test React projects
 npm run mock:ws            # same WS server works for both apps
-npm run start:react        # serve at http://localhost:4201
+npm run start:react        # serve React app
 ```
 
-**Both apps**
+**Shell** — `http://localhost:4000`
+```bash
+npm run start:shell        # serve vanilla JS shell (no build needed)
+```
+
+**Hybrid MFE mode** (all three servers required)
+```bash
+# Terminal 1 — React remote (must be running for hybrid to work)
+npm run start:react
+
+# Terminal 2 — Angular host
+npm run start:angular
+
+# Terminal 3 — Shell landing page (optional)
+npm run start:shell
+```
+
+Then open `http://localhost:4200/hybrid` directly, or use the shell at `http://localhost:4000` and click **Hybrid**.
+
+> The React dev server must be on port 4201. Angular's `main.ts` resolves the remote URL as `http://localhost:4201/remoteEntry.js` in development.
+
+**All projects**
 ```bash
 npm run validate           # lint + test everything
 ```
@@ -272,8 +372,9 @@ npm run validate           # lint + test everything
 
 | Command | Scope | Description |
 | :--- | :--- | :--- |
-| `npm start` | Angular | Serve Angular app at `http://localhost:4200` |
+| `npm run start:angular` | Angular | Serve Angular app at `http://localhost:4200` |
 | `npm run start:react` | React | Serve React app at `http://localhost:4201` |
+| `npm run start:shell` | Shell | Serve vanilla JS shell at `http://localhost:4000` |
 | `npm run mock:ws` | Both | Start WS mock server at `ws://localhost:3000/orders` |
 | `npm run format` | Both | Run Prettier across the workspace |
 | `npm run lint` | Both | ESLint across the entire monorepo |
@@ -319,13 +420,14 @@ setupZonelessTestEnv({ errorOnUnknownElements: true, errorOnUnknownProperties: t
 ## 📌 Summary
 
 This project demonstrates:
-* Scalable **Nx monorepo** with two parallel framework implementations
+* Scalable **Nx monorepo** with two parallel framework implementations + a framework-agnostic shell
 * **Shared domain contracts** (`@portal/users/utils`) consumed by both Angular and React
 * **Module boundary enforcement** via Nx ESLint `type:` + `framework:` tags
 * **Angular** — NgRx Entity + Selectors, Angular Signals, OnPush, CDK Virtual Scroll
 * **React** — TanStack Query, Zustand, `@tanstack/react-virtual`, `React.memo`
 * **Facade pattern** in both frameworks: same public surface (`UserOrdersVm`), idiomatic internals
 * **WebSocket stream** with pending-buffer pattern and real-time order monitoring (shared pure logic)
+* **Hybrid MFE** — Module Federation 2.0, Angular host loads React remote at runtime, framework-agnostic `mount()` API
 * **Scoped CI scripts** — `validate:angular` / `validate:react` / `build:angular` / `build:react`
 
 
