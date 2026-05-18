@@ -4,6 +4,7 @@ import {
   selectUserResolver,
   UserOrdersComponent,
 } from '@portal/users-angular/feature';
+import { ReactWrapperComponent } from './react-wrapper/react-wrapper.component';
 
 export const appRoutes: Route[] = [
   {
@@ -15,6 +16,10 @@ export const appRoutes: Route[] = [
     path: 'users',
     canActivate: [autoSelectUserGuard],
     component: UserOrdersComponent,
+  },
+  {
+    path: 'hybrid',
+    component: ReactWrapperComponent,
   },
   { path: '**', redirectTo: 'users' },
 ];
