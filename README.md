@@ -14,7 +14,7 @@ This repository explores how the same frontend domain can evolve across:
 **🚀 Live Demo**
 
 <a href="https://users-portal-shell.vercel.app">
-  <img src="https://img.shields.io/badge/-Shell-6366f1?style=for-the-badge&logoColor=white" />
+  <img src="https://img.shields.io/badge/🧩%20Hybrid%20MFE-0f766e?style=for-the-badge" />
 </a>
 
 <a href="https://users-portal-angular.vercel.app">
