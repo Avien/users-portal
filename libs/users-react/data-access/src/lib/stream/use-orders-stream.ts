@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import { useQueryClient, QueryClient } from '@tanstack/react-query';
 import type { Order, OrderMonitoringState, User } from '@portal/users/utils';
 import {
   createOrderMonitoringState,
@@ -27,73 +27,83 @@ export function drainPendingOrders(userId: number): Order[] {
   return orders;
 }
 
+// Module-level singleton — one socket regardless of StrictMode double-mount.
+let ws: WebSocket | null = null;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let refCount = 0;
+let monitoringState: OrderMonitoringState = createOrderMonitoringState();
+let streamedOrders: Order[] = [];
+
+function connect(queryClient: QueryClient): void {
+  ws = new WebSocket(ORDERS_SOCKET_URL);
+
+  ws.onmessage = (event: MessageEvent) => {
+    let parsed: OrderStreamEvent;
+    try {
+      parsed = JSON.parse(event.data as string);
+    } catch {
+      return;
+    }
+    if (parsed.type !== 'order-update') return;
+
+    const order = parsed.payload;
+
+    queryClient.setQueryData<Order[]>(['orders', order.userId], (prev) => {
+      if (prev) return prev.some((o) => o.id === order.id) ? prev : [...prev, order];
+      // Cache not populated yet — buffer until the facade drains it after API load
+      const buffered = pendingByUser.get(order.userId) ?? [];
+      pendingByUser.set(order.userId, [...buffered, order]);
+      return prev;
+    });
+
+    streamedOrders = [...streamedOrders, order];
+    const users = queryClient.getQueryData<User[]>(['users']) ?? [];
+    const { next, toastPayloads } = reduceOrderMonitoring(
+      monitoringState,
+      streamedOrders,
+      users,
+      { now: Date.now(), burstWindowMs: ORDER_BURST_WINDOW_MS }
+    );
+    monitoringState = next;
+
+    const { addNotification } = useUsersStore.getState();
+    for (const payload of toastPayloads) {
+      addNotification(payload);
+    }
+  };
+
+  ws.onclose = () => {
+    if (refCount > 0) {
+      monitoringState = createOrderMonitoringState();
+      streamedOrders = [];
+      reconnectTimer = setTimeout(() => connect(queryClient), 3000);
+    }
+  };
+
+  ws.onerror = () => ws?.close();
+}
+
+function disconnect(): void {
+  if (reconnectTimer !== null) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  ws?.close();
+  ws = null;
+  monitoringState = createOrderMonitoringState();
+  streamedOrders = [];
+}
+
 export function useOrdersStream(): void {
   const queryClient = useQueryClient();
-  const monitoringStateRef = useRef<OrderMonitoringState>(createOrderMonitoringState());
-  const streamedOrdersRef = useRef<Order[]>([]);
 
   useEffect(() => {
-    let ws: WebSocket;
-    let reconnectTimer: ReturnType<typeof setTimeout>;
-    let alive = true;
-
-    const connect = () => {
-      ws = new WebSocket(ORDERS_SOCKET_URL);
-
-      ws.onmessage = (event: MessageEvent) => {
-        let parsed: OrderStreamEvent;
-        try {
-          parsed = JSON.parse(event.data as string);
-        } catch {
-          return;
-        }
-        if (parsed.type !== 'order-update') return;
-
-        const order = parsed.payload;
-
-        queryClient.setQueryData<Order[]>(['orders', order.userId], (prev) => {
-          if (prev) return prev.some((o) => o.id === order.id) ? prev : [...prev, order];
-          // Cache not populated yet — buffer until the facade drains it after API load
-          const buffered = pendingByUser.get(order.userId) ?? [];
-          pendingByUser.set(order.userId, [...buffered, order]);
-          return prev;
-        });
-
-        streamedOrdersRef.current = [...streamedOrdersRef.current, order];
-        const users = queryClient.getQueryData<User[]>(['users']) ?? [];
-        const { next, toastPayloads } = reduceOrderMonitoring(
-          monitoringStateRef.current,
-          streamedOrdersRef.current,
-          users,
-          { now: Date.now(), burstWindowMs: ORDER_BURST_WINDOW_MS }
-        );
-        monitoringStateRef.current = next;
-
-        const { addNotification } = useUsersStore.getState();
-        for (const payload of toastPayloads) {
-          addNotification(payload);
-        }
-      };
-
-      ws.onclose = () => {
-        if (alive) {
-          monitoringStateRef.current = createOrderMonitoringState();
-          streamedOrdersRef.current = [];
-          reconnectTimer = setTimeout(connect, 3000);
-        }
-      };
-
-      ws.onerror = () => ws.close();
-    };
-
-    connect();
+    refCount++;
+    if (refCount === 1) connect(queryClient);
 
     return () => {
-      alive = false;
-      clearTimeout(reconnectTimer);
-      ws?.close();
-      monitoringStateRef.current = createOrderMonitoringState();
-      streamedOrdersRef.current = [];
+      refCount--;
+      if (refCount === 0) disconnect();
     };
   }, [queryClient]);
 }
