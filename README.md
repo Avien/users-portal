@@ -160,14 +160,17 @@ The dashboard includes a real-time monitoring layer that turns streamed order ac
 - **Feature/UI rendering (both apps)**  
   Toasts are rendered via `toast-stack` from `vm.notifications`.
 
-### Try it locally
+d### Try it
 
+**Locally:**
 ```bash
 npm run mock:ws
 npm start
 ```
 
-Then open the Users dashboard and watch incoming `order-update` events produce warning/critical toasts when conditions are met.
+**Production (live demos):** The WS server runs on [Railway](https://railway.app) as a persistent Node.js process. Angular reads the URL from `environment.prod.ts`; React reads `VITE_ORDERS_WS_URL` from the Vercel environment.
+
+On connect, the server immediately emits two orders for the same user (~0.5 s and ~1.5 s after connection) to trigger the **critical burst toast** as soon as the app loads. Subsequent orders arrive every 5–15 s at random.
 
 ---
 
@@ -467,7 +470,8 @@ setupZonelessTestEnv({ errorOnUnknownElements: true, errorOnUnknownProperties: t
 ## 📝 Notes
 
 - Both apps use **mock data** served by `tools/mock-orders-ws-server.mjs` and in-memory API stubs. No real backend required.
-- Run `npm run mock:ws` before starting either app to see live order streaming.
+- **Locally:** run `npm run mock:ws` before starting either app to see live order streaming. **In production:** the same server runs on Railway; Angular + React both point to the Railway URL via their respective environment configs.
+- On each new connection the server sends a burst of two orders within ~1 s to immediately trigger the critical burst toast and a high-value warning toast — no need to wait for the random stream to produce these conditions organically.
 - **Angular** — `UsersFacade` abstracts all NgRx interactions (actions, selectors, effects) from the UI. Components only see Angular Signals from `$vm`.
 - **React** — `useUsersFacade()` plays the same role: it composes TanStack Query + Zustand and returns `UserOrdersVm & IUsersFacadeInteractions`. Components only see plain props.
 - Both facades share the same `UserOrdersVm` / `IUsersFacadeInteractions` contracts from `@portal/users/utils`, enforcing a consistent public surface across frameworks.
