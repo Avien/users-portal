@@ -1,11 +1,11 @@
-import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
+import { ApplicationConfig, provideBrowserGlobalErrorListeners, isDevMode } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { provideStoreDevtools } from '@ngrx/store-devtools';
-import { provideUsersState } from '@portal/users-angular/data-access';
+import { provideUsersState, ORDERS_SOCKET_URL } from '@portal/users-angular/data-access';
 import { appRoutes } from './app.routes';
 import { provideStore } from '@ngrx/store';
 import { provideEffects } from '@ngrx/effects';
-import { isDevMode } from '@angular/core';
+import { environment } from '../environments/environment';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -14,6 +14,7 @@ export const appConfig: ApplicationConfig = {
     provideStore(),
     provideEffects(),
     provideUsersState(),
+    { provide: ORDERS_SOCKET_URL, useValue: environment.ordersWsUrl },
     provideStoreDevtools({
       maxAge: 25,
       logOnly: !isDevMode()
