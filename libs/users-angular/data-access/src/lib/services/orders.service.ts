@@ -1,5 +1,5 @@
 import { inject, Injectable, InjectionToken } from '@angular/core';
-import { filter, Observable, map } from 'rxjs';
+import { filter, Observable, map, retry } from 'rxjs';
 import { webSocket } from 'rxjs/webSocket';
 import { Order, DEFAULT_ORDERS_WS_URL } from '@portal/users/utils';
 
@@ -20,6 +20,7 @@ export class OrdersService {
 
   public ordersUpdates$: Observable<Order> = this.stream$.pipe(
     filter((event: OrderStreamEvent) => event.type === 'order-update'),
-    map((event: OrderStreamEvent) => event.payload)
+    map((event: OrderStreamEvent) => event.payload),
+    retry({ delay: 3000 })
   );
 }

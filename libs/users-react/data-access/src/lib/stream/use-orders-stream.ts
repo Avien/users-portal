@@ -33,45 +33,61 @@ export function useOrdersStream(): void {
   const streamedOrdersRef = useRef<Order[]>([]);
 
   useEffect(() => {
-    const ws = new WebSocket(ORDERS_SOCKET_URL);
+    let ws: WebSocket;
+    let reconnectTimer: ReturnType<typeof setTimeout>;
+    let alive = true;
 
-    ws.onmessage = (event: MessageEvent) => {
-      let parsed: OrderStreamEvent;
-      try {
-        parsed = JSON.parse(event.data as string);
-      } catch {
-        return;
-      }
-      if (parsed.type !== 'order-update') return;
+    const connect = () => {
+      ws = new WebSocket(ORDERS_SOCKET_URL);
 
-      const order = parsed.payload;
+      ws.onmessage = (event: MessageEvent) => {
+        let parsed: OrderStreamEvent;
+        try {
+          parsed = JSON.parse(event.data as string);
+        } catch {
+          return;
+        }
+        if (parsed.type !== 'order-update') return;
 
-      queryClient.setQueryData<Order[]>(['orders', order.userId], (prev) => {
-        if (prev) return [...prev, order];
-        // Cache not populated yet — buffer until the facade drains it after API load
-        const buffered = pendingByUser.get(order.userId) ?? [];
-        pendingByUser.set(order.userId, [...buffered, order]);
-        return prev;
-      });
+        const order = parsed.payload;
 
-      streamedOrdersRef.current = [...streamedOrdersRef.current, order];
-      const users = queryClient.getQueryData<User[]>(['users']) ?? [];
-      const { next, toastPayloads } = reduceOrderMonitoring(
-        monitoringStateRef.current,
-        streamedOrdersRef.current,
-        users,
-        { now: Date.now(), burstWindowMs: ORDER_BURST_WINDOW_MS }
-      );
-      monitoringStateRef.current = next;
+        queryClient.setQueryData<Order[]>(['orders', order.userId], (prev) => {
+          if (prev) return [...prev, order];
+          // Cache not populated yet — buffer until the facade drains it after API load
+          const buffered = pendingByUser.get(order.userId) ?? [];
+          pendingByUser.set(order.userId, [...buffered, order]);
+          return prev;
+        });
 
-      const { addNotification } = useUsersStore.getState();
-      for (const payload of toastPayloads) {
-        addNotification(payload);
-      }
+        streamedOrdersRef.current = [...streamedOrdersRef.current, order];
+        const users = queryClient.getQueryData<User[]>(['users']) ?? [];
+        const { next, toastPayloads } = reduceOrderMonitoring(
+          monitoringStateRef.current,
+          streamedOrdersRef.current,
+          users,
+          { now: Date.now(), burstWindowMs: ORDER_BURST_WINDOW_MS }
+        );
+        monitoringStateRef.current = next;
+
+        const { addNotification } = useUsersStore.getState();
+        for (const payload of toastPayloads) {
+          addNotification(payload);
+        }
+      };
+
+      ws.onclose = () => {
+        if (alive) reconnectTimer = setTimeout(connect, 3000);
+      };
+
+      ws.onerror = () => ws.close();
     };
 
+    connect();
+
     return () => {
-      ws.close();
+      alive = false;
+      clearTimeout(reconnectTimer);
+      ws?.close();
       monitoringStateRef.current = createOrderMonitoringState();
       streamedOrdersRef.current = [];
     };
