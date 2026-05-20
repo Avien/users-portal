@@ -52,7 +52,7 @@ export function useOrdersStream(): void {
         const order = parsed.payload;
 
         queryClient.setQueryData<Order[]>(['orders', order.userId], (prev) => {
-          if (prev) return [...prev, order];
+          if (prev) return prev.some((o) => o.id === order.id) ? prev : [...prev, order];
           // Cache not populated yet — buffer until the facade drains it after API load
           const buffered = pendingByUser.get(order.userId) ?? [];
           pendingByUser.set(order.userId, [...buffered, order]);
@@ -76,7 +76,11 @@ export function useOrdersStream(): void {
       };
 
       ws.onclose = () => {
-        if (alive) reconnectTimer = setTimeout(connect, 3000);
+        if (alive) {
+          monitoringStateRef.current = createOrderMonitoringState();
+          streamedOrdersRef.current = [];
+          reconnectTimer = setTimeout(connect, 3000);
+        }
       };
 
       ws.onerror = () => ws.close();
