@@ -1,6 +1,7 @@
 import { WebSocketServer } from 'ws';
 
-const wss = new WebSocketServer({ port: 3000, path: '/orders' });
+const PORT = process.env['PORT'] ? Number(process.env['PORT']) : 3000;
+const wss = new WebSocketServer({ port: PORT, path: '/orders' });
 
 // Keep in sync with `libs/users/data-access/src/lib/services/user.mocks.ts` (MOCK_ORDERS).
 const baseOrders = [
@@ -23,7 +24,7 @@ const randomIntInclusive = (min, max) => {
 
 const randomMoney = () => Number((Math.random() * 750 + 25).toFixed(2));
 
-console.log('Mock WS running at ws://localhost:3000/orders');
+console.log(`Mock WS running at ws://localhost:${PORT}/orders`);
 
 wss.on('connection', (socket) => {
   console.log('Client connected to mock orders socket');
