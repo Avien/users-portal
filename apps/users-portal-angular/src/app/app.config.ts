@@ -5,7 +5,7 @@ import { provideUsersState, ORDERS_SOCKET_URL } from '@portal/users-angular/data
 import { appRoutes } from './app.routes';
 import { provideStore } from '@ngrx/store';
 import { provideEffects } from '@ngrx/effects';
-import { environment } from './environments/environment';
+import { environment } from '../environments/environment';
 
 export const appConfig: ApplicationConfig = {
   providers: [
