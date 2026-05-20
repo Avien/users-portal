@@ -58,12 +58,14 @@ wss.on('connection', (socket) => {
     socket.send(JSON.stringify({ type: 'order-update', payload }));
   };
 
-  // Two rapid orders for the same user on connect:
-  // - first order total >= $500 → triggers the high-value warning toast
-  // - second order within 1s → triggers the critical burst toast
+  // Three rapid orders for the same user on connect:
+  // - first order is swallowed by the learning tick (monitoring baseline)
+  // - second order total >= $500 → triggers the high-value warning toast
+  // - third order within the burst window → triggers the critical burst toast
   const burstUserId = userIds[0];
-  const burstTimer1 = setTimeout(() => emit(burstUserId, randomMoney() + 500), 500);
-  const burstTimer2 = setTimeout(() => emit(burstUserId), 1500);
+  const burstTimer1 = setTimeout(() => emit(burstUserId), 500);
+  const burstTimer2 = setTimeout(() => emit(burstUserId, randomMoney() + 500), 1500);
+  const burstTimer3 = setTimeout(() => emit(burstUserId), 2500);
 
   const scheduleNext = () => {
     const delayMs = randomIntInclusive(5000, 15000);
@@ -78,6 +80,7 @@ wss.on('connection', (socket) => {
   socket.on('close', () => {
     clearTimeout(burstTimer1);
     clearTimeout(burstTimer2);
+    clearTimeout(burstTimer3);
     clearTimeout(timer);
     console.log('Client disconnected from mock orders socket');
   });
