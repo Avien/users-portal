@@ -13,13 +13,13 @@ type Unmount = () => void;
 
 export function mount(
   container: HTMLElement,
-  { initialPath }: { initialPath: string }
+  { initialPath, enableWs = true }: { initialPath: string; enableWs?: boolean }
 ): Unmount {
   const root = createRoot(container);
   root.render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[initialPath]}>
-        <App />
+        <App enableWs={enableWs} />
       </MemoryRouter>
     </QueryClientProvider>
   );

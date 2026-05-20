@@ -88,16 +88,23 @@ function disconnect(): void {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
-  ws?.close();
-  ws = null;
+  if (ws) {
+    // Null handlers before close so the async onclose event does not schedule
+    // a reconnect after an intentional teardown (e.g. StrictMode cleanup).
+    ws.onclose = null;
+    ws.onerror = null;
+    ws.close();
+    ws = null;
+  }
   monitoringState = createOrderMonitoringState();
   streamedOrders = [];
 }
 
-export function useOrdersStream(): void {
+export function useOrdersStream(enabled = true): void {
   const queryClient = useQueryClient();
 
   useEffect(() => {
+    if (!enabled) return;
     refCount++;
     if (refCount === 1) connect(queryClient);
 
@@ -105,5 +112,5 @@ export function useOrdersStream(): void {
       refCount--;
       if (refCount === 0) disconnect();
     };
-  }, [queryClient]);
+  }, [queryClient, enabled]);
 }

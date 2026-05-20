@@ -9,7 +9,7 @@ import { loadRemote } from '@module-federation/runtime';
 
 type MountFn = (
   container: HTMLElement,
-  opts: { initialPath: string }
+  opts: { initialPath: string; enableWs?: boolean }
 ) => () => void;
 
 @Component({
@@ -26,6 +26,7 @@ export class ReactWrapperComponent implements AfterViewInit, OnDestroy {
     const mod = await loadRemote<{ mount: MountFn }>('react-users/mount');
     this.unmount = mod!.mount(this.container.nativeElement, {
       initialPath: '/users',
+      enableWs: false,
     });
   }
 

@@ -3,8 +3,8 @@ import { UserOrders } from '@portal/users-react/feature';
 import { useOrdersStream } from '@portal/users-react/data-access';
 import { ErrorBoundary } from '@portal/users-react/ui';
 
-export function App() {
-  useOrdersStream();
+export function App({ enableWs = true }: { enableWs?: boolean }) {
+  useOrdersStream(enableWs);
   return (
     <ErrorBoundary>
       <Routes>
