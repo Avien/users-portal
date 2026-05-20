@@ -76,8 +76,9 @@ describe('useOrdersStream', () => {
     const { wrapper } = makeWrapper();
     renderHook(() => useOrdersStream(), { wrapper });
 
+    const expectedUrl = import.meta.env['VITE_ORDERS_WS_URL'] ?? DEFAULT_ORDERS_WS_URL;
     expect(MockWebSocket.instances).toHaveLength(1);
-    expect(MockWebSocket.latest().url).toBe(DEFAULT_ORDERS_WS_URL);
+    expect(MockWebSocket.latest().url).toBe(expectedUrl);
   });
 
   it('closes the WebSocket on unmount', () => {
