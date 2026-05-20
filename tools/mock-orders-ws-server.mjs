@@ -50,16 +50,25 @@ wss.on('connection', (socket) => {
     return candidate;
   };
 
+  const emit = (userId, total = randomMoney()) => {
+    const id = allocateNewId(userId);
+    const payload = { id, userId, total: Number(total.toFixed(2)) };
+    liveOrders.set(payload.id, { ...payload });
+    console.log(`WS emit order id=${payload.id} userId=${payload.userId} total=${payload.total}`);
+    socket.send(JSON.stringify({ type: 'order-update', payload }));
+  };
+
+  // Two rapid orders for the same user on connect:
+  // - first order total >= $500 → triggers the high-value warning toast
+  // - second order within 1s → triggers the critical burst toast
+  const burstUserId = userIds[0];
+  const burstTimer1 = setTimeout(() => emit(burstUserId, randomMoney() + 500), 500);
+  const burstTimer2 = setTimeout(() => emit(burstUserId), 1500);
+
   const scheduleNext = () => {
     const delayMs = randomIntInclusive(5000, 15000);
     return setTimeout(() => {
-      const userId = userIds[randomIntInclusive(0, userIds.length - 1)];
-      const id = allocateNewId(userId);
-      const payload = { id, userId, total: randomMoney() };
-      liveOrders.set(payload.id, { ...payload });
-      console.log(`WS emit NEW order id=${payload.id} userId=${payload.userId} total=${payload.total}`);
-
-      socket.send(JSON.stringify({ type: 'order-update', payload }));
+      emit(userIds[randomIntInclusive(0, userIds.length - 1)]);
       timer = scheduleNext();
     }, delayMs);
   };
@@ -67,6 +76,8 @@ wss.on('connection', (socket) => {
   let timer = scheduleNext();
 
   socket.on('close', () => {
+    clearTimeout(burstTimer1);
+    clearTimeout(burstTimer2);
     clearTimeout(timer);
     console.log('Client disconnected from mock orders socket');
   });
