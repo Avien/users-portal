@@ -77,7 +77,11 @@ wss.on('connection', (socket) => {
 
   let timer = scheduleNext();
 
+  // Keep the Railway proxy from timing out idle client→server direction
+  const pingInterval = setInterval(() => socket.ping(), 30_000);
+
   socket.on('close', () => {
+    clearInterval(pingInterval);
     clearTimeout(burstTimer1);
     clearTimeout(burstTimer2);
     clearTimeout(burstTimer3);
