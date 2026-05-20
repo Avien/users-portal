@@ -27,7 +27,7 @@ This repository explores how the same frontend domain can evolve across:
 
 ## 📦 Project Overview
 
-This Nx monorepo contains **two parallel implementations** of the same domain — a users-and-orders dashboard with real-time WebSocket updates — plus a vanilla JS shell that composes them as Microfrontends:
+This Nx monorepo contains Angular, React, and Hybrid Microfrontend implementations of the same domain — a users-and-orders dashboard with real-time WebSocket updates.
 
 | App | Stack | Purpose |
 | :--- | :--- | :--- |
