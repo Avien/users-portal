@@ -175,11 +175,66 @@ Then open the Users dashboard and watch incoming `order-update` events produce w
 
 ### Reactive Facade Pattern
 
-Both apps implement the same facade pattern — a single boundary between UI and state — but express it differently according to each framework's idioms.
+#### The core idea: separating Business Logic from Presentation Logic
+
+The Facade pattern draws a hard boundary between two distinct concerns:
+
+- **Business Logic (BL)** — where does data come from? How is it fetched, cached, derived, and mutated? What rules govern state transitions? (NgRx store + effects + selectors in Angular; TanStack Query + Zustand + `useMemo` in React)
+- **Presentation Logic (PL)** — how is data displayed? What does the user see and interact with? (Angular components reading `$vm`; React components receiving props)
+
+The facade sits at that boundary. It owns all BL and publishes a single, clean ViewModel to the UI. Components on the other side are **purely presentational** — they receive data and emit events, with no knowledge of how state is managed underneath.
+
+#### Smart vs Dumb components
+
+This boundary creates two distinct component types:
+
+**Smart component** (one per feature) — calls the facade, owns the layout, passes data down:
+- Angular: `UserOrdersComponent` — reads `$vm` signal, renders child components
+- React: `UserOrders` component — calls `useUsersFacade()`, renders child components
+- Has no business logic, but is aware of the facade's existence
+
+**Dumb (presentational) components** — props in, events out, nothing else:
+- `UserButtons`, `OrdersCard`, `UserName`, `UserTotalOrders`, `ToastStack`
+- Zero knowledge of NgRx, TanStack Query, Zustand, or routing
+- Identical contract in both frameworks: typed props → rendered JSX/template
+- Wrapped in `React.memo` (React) / `OnPush` (Angular) — re-render only when props change
+
+```
+                   ┌─────────────────────────────┐
+                   │         FACADE               │
+                   │  (Business Logic boundary)   │
+  NgRx / TanStack ─┤  - fetches & caches data     ├─► ViewModel (UserOrdersVm)
+  Zustand / RxJS   │  - derives & memoises        │
+  Router / URL     │  - handles interactions      ├─► Interactions (selectUser, dismiss)
+                   └─────────────────────────────┘
+                                  │
+                    ┌─────────────▼────────────┐
+                    │      Smart Component      │
+                    │  (reads VM, owns layout)  │
+                    └─────────────┬────────────┘
+                                  │ props + callbacks
+                    ┌─────────────▼────────────┐
+                    │   Dumb Components (many)  │
+                    │  props in → renders out   │
+                    │  OnPush / React.memo      │
+                    └──────────────────────────┘
+```
+
+#### Why this matters
+
+| Without facade | With facade |
+| :--- | :--- |
+| Components import NgRx actions / Zustand stores directly | Components import nothing — only props |
+| Swapping state libraries requires touching every component | Swap the facade internals, components unchanged |
+| Testing components requires mocking the entire state tree | Test components with plain prop objects |
+| Business rules scattered across templates and components | BL in one place, independently testable |
+| Smart/dumb boundary unclear — any component can reach into state | Enforced by API: dumb components literally cannot access state |
+
+#### Framework implementations
 
 **Angular — `UsersFacade` (class, root-scoped DI)**
 
-UI components have **zero knowledge of NgRx**. All store interactions are handled by the injectable `UsersFacade`, which exposes a single `$vm` Angular Signal as the public surface. Route lifecycle (loading users, selecting from URL) is delegated to `selectUserResolver` and `autoSelectUserGuard` — the component itself is a pure view with no `ngOnInit`.
+Exposed as a single Angular Signal `$vm` — the component reads one object and re-renders when it changes. Route lifecycle (loading users, selecting from URL) is delegated to `selectUserResolver` and `autoSelectUserGuard` — the component has no `ngOnInit` at all.
 
 * UI components only read `$vm` — no actions, no selectors, no subscriptions
 * Route guards and resolvers drive initialization, not the component
@@ -187,7 +242,7 @@ UI components have **zero knowledge of NgRx**. All store interactions are handle
 
 **React — `useUsersFacade()` (hook, component-scoped)**
 
-`useUsersFacade()` plays the same role: it composes TanStack Query + Zustand and returns `UserOrdersVm & IUsersFacadeInteractions` as a plain object. Components are unaware of either library. Because hooks are naturally component-scoped, the React facade doesn't need DI — it IS the DI boundary.
+Same role, idiomatic React form: composes TanStack Query + Zustand and returns `UserOrdersVm & IUsersFacadeInteractions` as a plain object. Components are unaware of either library. Because hooks are naturally component-scoped, the React facade doesn't need DI — it IS the DI boundary.
 
 * URL (`useParams`) is the source of truth for `selectedUserId` — no Zustand for selection
 * `useNavigate` is the write path for `selectUser` — navigation IS the state update
@@ -201,6 +256,8 @@ Both facades return the same shape, enforced by `@portal/users/utils`:
 UserOrdersVm & IUsersFacadeInteractions
 // selectUser(id), dismissOrderNotification(id) — identical public surface
 ```
+
+Swapping the entire state management stack (Angular NgRx ↔ React TanStack+Zustand) had zero impact on the presentational components — they consume the same contract either way.
 
 ---
 
