@@ -12,6 +12,9 @@ import { useUsersStore } from '../store/users.store';
 const ORDERS_SOCKET_URL =
   import.meta.env['VITE_ORDERS_WS_URL'] ?? DEFAULT_ORDERS_WS_URL;
 
+/** DOM event name Angular dispatches when running as the WS owner in the MFE. */
+export const MFE_ORDER_EVENT = 'mfe:order-update';
+
 interface OrderStreamEvent {
   type: string;
   payload: Order;
@@ -34,6 +37,31 @@ let refCount = 0;
 let monitoringState: OrderMonitoringState = createOrderMonitoringState();
 let streamedOrders: Order[] = [];
 
+function processOrder(order: Order, queryClient: QueryClient): void {
+  queryClient.setQueryData<Order[]>(['orders', order.userId], (prev) => {
+    if (prev) return prev.some((o) => o.id === order.id) ? prev : [...prev, order];
+    // Cache not populated yet — buffer until the facade drains it after API load
+    const buffered = pendingByUser.get(order.userId) ?? [];
+    pendingByUser.set(order.userId, [...buffered, order]);
+    return prev;
+  });
+
+  streamedOrders = [...streamedOrders, order];
+  const users = queryClient.getQueryData<User[]>(['users']) ?? [];
+  const { next, toastPayloads } = reduceOrderMonitoring(
+    monitoringState,
+    streamedOrders,
+    users,
+    { now: Date.now(), burstWindowMs: ORDER_BURST_WINDOW_MS }
+  );
+  monitoringState = next;
+
+  const { addNotification } = useUsersStore.getState();
+  for (const payload of toastPayloads) {
+    addNotification(payload);
+  }
+}
+
 function connect(queryClient: QueryClient): void {
   ws = new WebSocket(ORDERS_SOCKET_URL);
 
@@ -45,31 +73,7 @@ function connect(queryClient: QueryClient): void {
       return;
     }
     if (parsed.type !== 'order-update') return;
-
-    const order = parsed.payload;
-
-    queryClient.setQueryData<Order[]>(['orders', order.userId], (prev) => {
-      if (prev) return prev.some((o) => o.id === order.id) ? prev : [...prev, order];
-      // Cache not populated yet — buffer until the facade drains it after API load
-      const buffered = pendingByUser.get(order.userId) ?? [];
-      pendingByUser.set(order.userId, [...buffered, order]);
-      return prev;
-    });
-
-    streamedOrders = [...streamedOrders, order];
-    const users = queryClient.getQueryData<User[]>(['users']) ?? [];
-    const { next, toastPayloads } = reduceOrderMonitoring(
-      monitoringState,
-      streamedOrders,
-      users,
-      { now: Date.now(), burstWindowMs: ORDER_BURST_WINDOW_MS }
-    );
-    monitoringState = next;
-
-    const { addNotification } = useUsersStore.getState();
-    for (const payload of toastPayloads) {
-      addNotification(payload);
-    }
+    processOrder(parsed.payload, queryClient);
   };
 
   ws.onclose = () => {
@@ -104,13 +108,20 @@ export function useOrdersStream(enabled = true): void {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    if (!enabled) return;
-    refCount++;
-    if (refCount === 1) connect(queryClient);
+    if (enabled) {
+      refCount++;
+      if (refCount === 1) connect(queryClient);
+      return () => {
+        refCount--;
+        if (refCount === 0) disconnect();
+      };
+    }
 
-    return () => {
-      refCount--;
-      if (refCount === 0) disconnect();
+    // MFE mode: Angular owns the WS; listen for its DOM bridge events.
+    const handler = (e: Event) => {
+      processOrder((e as CustomEvent<Order>).detail, queryClient);
     };
+    window.addEventListener(MFE_ORDER_EVENT, handler);
+    return () => window.removeEventListener(MFE_ORDER_EVENT, handler);
   }, [queryClient, enabled]);
 }

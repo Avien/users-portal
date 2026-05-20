@@ -1,7 +1,10 @@
 import { inject, Injectable, InjectionToken } from '@angular/core';
-import { filter, Observable, map, retry } from 'rxjs';
+import { filter, Observable, map, retry, tap } from 'rxjs';
 import { webSocket } from 'rxjs/webSocket';
 import { Order, DEFAULT_ORDERS_WS_URL } from '@portal/users/utils';
+
+/** Matches MFE_ORDER_EVENT in @portal/users-react/data-access. */
+const MFE_ORDER_EVENT = 'mfe:order-update';
 
 interface OrderStreamEvent {
   type: 'order-update';
@@ -21,6 +24,7 @@ export class OrdersService {
   public ordersUpdates$: Observable<Order> = this.stream$.pipe(
     filter((event: OrderStreamEvent) => event.type === 'order-update'),
     map((event: OrderStreamEvent) => event.payload),
+    tap((order) => window.dispatchEvent(new CustomEvent(MFE_ORDER_EVENT, { detail: order }))),
     retry({ delay: 3000 })
   );
 }
