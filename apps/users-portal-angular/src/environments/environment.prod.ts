@@ -1,3 +1,3 @@
 export const environment = {
-  ordersWsUrl: 'wss://PLACEHOLDER.up.railway.app/orders',
+  ordersWsUrl: 'wss://users-portal-production.up.railway.app/orders',
 };
