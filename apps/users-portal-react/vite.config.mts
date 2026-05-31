@@ -6,7 +6,7 @@ import { federation } from '@module-federation/vite';
 import { nxViteTsPaths } from '@nx/vite/plugins/nx-tsconfig-paths.plugin';
 import { nxCopyAssetsPlugin } from '@nx/vite/plugins/nx-copy-assets.plugin';
 
-export default defineConfig(() => ({
+export default defineConfig(({ mode }) => ({
   root: import.meta.dirname,
   cacheDir: '../node_modules/.vite/users-portal-react',
   server: {
@@ -19,7 +19,7 @@ export default defineConfig(() => ({
     host: 'localhost',
   },
   plugins: [
-    federation({
+    mode !== 'test' && federation({
       name: 'react-users',
       filename: 'remoteEntry.js',
       exposes: {
@@ -37,10 +37,16 @@ export default defineConfig(() => ({
     nxViteTsPaths(),
     nxCopyAssetsPlugin(['*.md']),
   ],
-  // Uncomment this if you are using workers.
-  // worker: {
-  //   plugins: () => [ nxViteTsPaths() ],
-  // },
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    include: ['src/**/*.spec.ts', 'src/**/*.spec.tsx'],
+    reporters: ['default'],
+    coverage: {
+      reportsDirectory: '../../coverage/apps/users-portal-react',
+      provider: 'v8',
+    },
+  },
   build: {
     outDir: path.resolve(import.meta.dirname, '../../dist/users-portal-react'),
     emptyOutDir: true,

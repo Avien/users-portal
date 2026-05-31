@@ -377,6 +377,16 @@ libs/
 | `ui` | `utils` |
 | `utils` | `utils` |
 
+#### Framework Isolation Rules
+
+| `framework:` tag | Projects |
+| :--- | :--- |
+| `framework:angular` | `users-portal-angular`, `users-angular/data-access`, `users-angular/feature`, `users-angular/ui` |
+| `framework:react` | `users-portal-react`, `users-react/data-access`, `users-react/feature`, `users-react/ui` |
+| `framework:shared` | `users/utils` |
+
+Angular and React libs must never import from each other. Only `framework:shared` libs may be imported by both.
+
 ---
 
 ## 💻 Local Development
