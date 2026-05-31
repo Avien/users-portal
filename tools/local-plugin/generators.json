@@ -1,0 +1,9 @@
+{
+  "generators": {
+    "feature-domain": {
+      "implementation": "../generators/dist/feature-domain/index",
+      "schema": "../generators/feature-domain/schema.json",
+      "description": "Scaffold a new feature domain for both Angular and React from a shared contract"
+    }
+  }
+}

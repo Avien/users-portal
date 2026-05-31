@@ -1,0 +1,2 @@
+export { fetch<%= capitalcase(name) %> } from './lib/api/<%= name %>.api';
+export { use<%= capitalcase(name) %>Store } from './lib/store/<%= name %>.store';

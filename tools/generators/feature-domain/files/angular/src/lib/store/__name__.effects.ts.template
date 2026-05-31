@@ -1,0 +1,26 @@
+import { Injectable, inject } from '@angular/core';
+import { Actions, createEffect, ofType } from '@ngrx/effects';
+import { catchError, map, switchMap } from 'rxjs/operators';
+import { of } from 'rxjs';
+import { <%= capitalcase(name) %>Actions } from './<%= name %>.actions';
+import { <%= capitalcase(name) %>Service } from '../<%= name %>.service';
+
+@Injectable()
+export class <%= capitalcase(name) %>Effects {
+  private actions$ = inject(Actions);
+  private <%= camelcase(name) %>Service = inject(<%= capitalcase(name) %>Service);
+
+  load<%= capitalcase(name) %>$ = createEffect(() =>
+    this.actions$.pipe(
+      ofType(<%= capitalcase(name) %>Actions.load<%= capitalcase(name) %>),
+      switchMap(() =>
+        this.<%= camelcase(name) %>Service.load().pipe(
+          map((items) => <%= capitalcase(name) %>Actions.load<%= capitalcase(name) %>Success({ items })),
+          catchError((err) =>
+            of(<%= capitalcase(name) %>Actions.load<%= capitalcase(name) %>Failure({ error: String(err) })),
+          ),
+        ),
+      ),
+    ),
+  );
+}

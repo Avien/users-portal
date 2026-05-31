@@ -1,0 +1,26 @@
+import { createAction, props } from '@ngrx/store';
+import type { <%= capitalcase(name) %> } from '@portal/<%= name %>/utils';
+
+const load<%= capitalcase(name) %> = createAction('[<%= capitalcase(name) %>] Load');
+
+const load<%= capitalcase(name) %>Success = createAction(
+  '[<%= capitalcase(name) %>] Load Success',
+  props<{ items: <%= capitalcase(name) %>[] }>(),
+);
+
+const load<%= capitalcase(name) %>Failure = createAction(
+  '[<%= capitalcase(name) %>] Load Failure',
+  props<{ error: string }>(),
+);
+
+const select<%= capitalcase(name) %> = createAction(
+  '[<%= capitalcase(name) %>] Select',
+  props<{ id: number }>(),
+);
+
+export const <%= capitalcase(name) %>Actions = {
+  load<%= capitalcase(name) %>,
+  load<%= capitalcase(name) %>Success,
+  load<%= capitalcase(name) %>Failure,
+  select<%= capitalcase(name) %>,
+};

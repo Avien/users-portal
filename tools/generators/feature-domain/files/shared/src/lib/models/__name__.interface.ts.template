@@ -1,0 +1,4 @@
+export interface <%= capitalcase(name) %> {
+  id: number;
+  // TODO: add domain-specific fields
+}

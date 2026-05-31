@@ -1,0 +1,4 @@
+export interface I<%= capitalcase(name) %>FacadeInteractions {
+  selectItem(id: number): void;
+  // TODO: add interaction methods
+}

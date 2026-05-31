@@ -1,0 +1,28 @@
+import { createFeatureSelector, createSelector } from '@ngrx/store';
+import { <%= camelcase(name) %>Adapter, type <%= capitalcase(name) %>State } from './<%= name %>.state';
+
+const feature = createFeatureSelector<<%= capitalcase(name) %>State>('<%= name %>');
+
+const { selectAll, selectEntities } = <%= camelcase(name) %>Adapter.getSelectors();
+
+const selectAll<%= capitalcase(name) %> = createSelector(feature, selectAll);
+const selectEntities<%= capitalcase(name) %> = createSelector(feature, selectEntities);
+const selectSelectedId = createSelector(feature, (s) => s.selectedId);
+const selectLoading = createSelector(feature, (s) => s.loading);
+const selectLoaded = createSelector(feature, (s) => s.loaded);
+const selectError = createSelector(feature, (s) => s.error);
+
+const selectSelected<%= capitalcase(name) %> = createSelector(
+  selectEntities<%= capitalcase(name) %>,
+  selectSelectedId,
+  (entities, id) => (id != null ? (entities[id] ?? null) : null),
+);
+
+export const <%= capitalcase(name) %>Selectors = {
+  selectAll<%= capitalcase(name) %>,
+  selectSelected<%= capitalcase(name) %>,
+  selectSelectedId,
+  selectLoading,
+  selectLoaded,
+  selectError,
+};

@@ -1,0 +1,19 @@
+{
+  "name": "<%= name %>-angular-data-access",
+  "$schema": "../../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/<%= name %>-angular/data-access/src",
+  "projectType": "library",
+  "tags": ["type:data-access", "scope:<%= name %>-angular", "framework:angular"],
+  "targets": {
+    "lint": {
+      "executor": "@nx/eslint:lint"
+    },
+    "test": {
+      "executor": "@nx/jest:jest",
+      "outputs": ["{workspaceRoot}/coverage/{projectRoot}"],
+      "options": {
+        "jestConfig": "libs/<%= name %>-angular/data-access/jest.config.cts"
+      }
+    }
+  }
+}

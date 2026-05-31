@@ -1,0 +1,12 @@
+import { create } from 'zustand';
+
+// UI-only state — server state lives in TanStack Query
+interface <%= capitalcase(name) %>Store {
+  selectedId: number | null;
+  setSelectedId: (id: number) => void;
+}
+
+export const use<%= capitalcase(name) %>Store = create<<%= capitalcase(name) %>Store>((set) => ({
+  selectedId: null,
+  setSelectedId: (id) => set({ selectedId: id }),
+}));

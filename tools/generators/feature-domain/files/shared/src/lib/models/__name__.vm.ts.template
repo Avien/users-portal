@@ -1,0 +1,9 @@
+import type { <%= capitalcase(name) %> } from './<%= name %>.interface';
+
+export interface <%= capitalcase(name) %>Vm {
+  items: <%= capitalcase(name) %>[];
+  selectedId: number | null;
+  loading: boolean;
+  loaded: boolean;
+  error: string | null;
+}

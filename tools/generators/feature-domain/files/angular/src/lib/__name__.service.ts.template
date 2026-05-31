@@ -1,0 +1,13 @@
+import { Injectable } from '@angular/core';
+import { Observable, of } from 'rxjs';
+import { delay } from 'rxjs/operators';
+import type { <%= capitalcase(name) %> } from '@portal/<%= name %>/utils';
+import { MOCK_<%= uppercase(name) %> } from '@portal/<%= name %>/utils';
+
+@Injectable({ providedIn: 'root' })
+export class <%= capitalcase(name) %>Service {
+  load(): Observable<<%= capitalcase(name) %>[]> {
+    // TODO: replace with real HTTP call
+    return of(MOCK_<%= uppercase(name) %>).pipe(delay(500));
+  }
+}

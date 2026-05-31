@@ -1,0 +1,7 @@
+{
+  "name": "<%= name %>-react-feature",
+  "$schema": "../../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/<%= name %>-react/feature/src",
+  "projectType": "library",
+  "tags": ["type:feature", "scope:<%= name %>-react", "framework:react"]
+}

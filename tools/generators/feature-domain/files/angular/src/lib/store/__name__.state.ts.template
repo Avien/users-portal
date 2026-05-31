@@ -1,0 +1,18 @@
+import type { <%= capitalcase(name) %> } from '@portal/<%= name %>/utils';
+import { EntityState, createEntityAdapter } from '@ngrx/entity';
+
+export interface <%= capitalcase(name) %>State extends EntityState<<%= capitalcase(name) %>> {
+  selectedId: number | null;
+  loading: boolean;
+  loaded: boolean;
+  error: string | null;
+}
+
+export const <%= camelcase(name) %>Adapter = createEntityAdapter<<%= capitalcase(name) %>>();
+
+export const initial<%= capitalcase(name) %>State: <%= capitalcase(name) %>State = <%= camelcase(name) %>Adapter.getInitialState({
+  selectedId: null,
+  loading: false,
+  loaded: false,
+  error: null,
+});

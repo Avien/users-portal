@@ -1,0 +1,4 @@
+export * from './lib/models/<%= name %>.interface';
+export * from './lib/models/<%= name %>-facade.interactions';
+export * from './lib/models/<%= name %>.vm';
+export * from './lib/mocks/mock-data';

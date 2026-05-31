@@ -1,0 +1,8 @@
+module.exports = {
+  displayName: '<%= name %>-utils',
+  preset: '../../jest.preset.js',
+  coverageDirectory: '../../coverage/libs/<%= name %>',
+  transform: {
+    '^.+\\.(ts|mjs|js|html)$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.spec.json' }],
+  },
+};

@@ -1,0 +1,38 @@
+import { Injectable, computed, inject } from '@angular/core';
+import { Store } from '@ngrx/store';
+import { Router } from '@angular/router';
+import type { I<%= capitalcase(name) %>FacadeInteractions, <%= capitalcase(name) %>Vm } from '@portal/<%= name %>/utils';
+import { <%= capitalcase(name) %>Actions } from './store/<%= name %>.actions';
+import { <%= capitalcase(name) %>Selectors } from './store/<%= name %>.selectors';
+
+@Injectable({ providedIn: 'root' })
+export class <%= capitalcase(name) %>Facade implements I<%= capitalcase(name) %>FacadeInteractions {
+  private store = inject(Store);
+  private router = inject(Router);
+
+  // Signals derived from NgRx selectors
+  readonly $items = this.store.selectSignal(<%= capitalcase(name) %>Selectors.selectAll<%= capitalcase(name) %>);
+  readonly $selectedId = this.store.selectSignal(<%= capitalcase(name) %>Selectors.selectSelectedId);
+  readonly $loading = this.store.selectSignal(<%= capitalcase(name) %>Selectors.selectLoading);
+  readonly $loaded = this.store.selectSignal(<%= capitalcase(name) %>Selectors.selectLoaded);
+  readonly $error = this.store.selectSignal(<%= capitalcase(name) %>Selectors.selectError);
+  readonly $selected = this.store.selectSignal(<%= capitalcase(name) %>Selectors.selectSelected<%= capitalcase(name) %>);
+
+  // ViewModel signal — equivalent to a combined NgRx selector
+  readonly $vm = computed((): <%= capitalcase(name) %>Vm => ({
+    items: this.$items(),
+    selectedId: this.$selectedId(),
+    loading: this.$loading(),
+    loaded: this.$loaded(),
+    error: this.$error(),
+  }));
+
+  load(): void {
+    this.store.dispatch(<%= capitalcase(name) %>Actions.load<%= capitalcase(name) %>());
+  }
+
+  selectItem(id: number): void {
+    this.store.dispatch(<%= capitalcase(name) %>Actions.select<%= capitalcase(name) %>({ id }));
+    this.router.navigate(['/<%= name %>', id]);
+  }
+}

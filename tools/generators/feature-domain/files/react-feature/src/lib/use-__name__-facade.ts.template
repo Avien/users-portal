@@ -1,0 +1,32 @@
+import { useCallback, useMemo } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import type { I<%= capitalcase(name) %>FacadeInteractions, <%= capitalcase(name) %>Vm } from '@portal/<%= name %>/utils';
+import { fetch<%= capitalcase(name) %> } from '@portal/<%= name %>-react/data-access';
+
+export function use<%= capitalcase(name) %>Facade(): <%= capitalcase(name) %>Vm & I<%= capitalcase(name) %>FacadeInteractions {
+  const { itemId } = useParams<{ itemId: string }>();
+  const selectedId = itemId ? Number(itemId) : null;
+  const navigate = useNavigate();
+
+  const query = useQuery({
+    queryKey: ['<%= name %>'],
+    queryFn: fetch<%= capitalcase(name) %>,
+  });
+
+  const items = useMemo(() => query.data ?? [], [query.data]);
+
+  const selectItem = useCallback(
+    (id: number) => navigate(`/<%= name %>/${id}`),
+    [navigate],
+  );
+
+  return {
+    items,
+    selectedId,
+    loading: query.isLoading,
+    loaded: query.isSuccess,
+    error: query.error ? String(query.error) : null,
+    selectItem,
+  };
+}

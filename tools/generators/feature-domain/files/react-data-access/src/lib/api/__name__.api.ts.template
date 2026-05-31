@@ -1,0 +1,7 @@
+import type { <%= capitalcase(name) %> } from '@portal/<%= name %>/utils';
+import { MOCK_<%= uppercase(name) %> } from '@portal/<%= name %>/utils';
+
+// TODO: replace with real fetch call
+export async function fetch<%= capitalcase(name) %>(): Promise<<%= capitalcase(name) %>[]> {
+  return new Promise((resolve) => setTimeout(() => resolve(MOCK_<%= uppercase(name) %>), 500));
+}

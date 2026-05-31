@@ -15,7 +15,9 @@
     "validate:react": "tsc --noEmit -p apps/users-portal-react/tsconfig.app.json && nx run-many -t lint test --projects=tag:framework:react,tag:framework:shared",
     "build:angular": "npm run validate:angular && nx build users-portal-angular",
     "build:react": "npm run validate:react && nx build users-portal-react",
-    "build:prod": "npm run build:angular"
+    "build:prod": "npm run build:angular",
+    "g:feature-domain": "npm run build:generators && nx g @portal/local-plugin:feature-domain",
+    "build:generators": "tsc tools/generators/feature-domain/index.ts tools/generators/generators.utils.ts --module commonjs --moduleResolution node --target es2020 --outDir tools/generators/dist --skipLibCheck --esModuleInterop && cp -r tools/generators/feature-domain/files tools/generators/dist/feature-domain/"
   },
   "private": true,
   "dependencies": {
@@ -91,6 +93,7 @@
     "typescript-eslint": "^8.40.0",
     "vite": "^7.0.0",
     "vitest": "^4.0.0",
-    "ws": "^8.20.0"
+    "ws": "^8.20.0",
+    "@portal/local-plugin": "file:./tools/local-plugin"
   }
 }

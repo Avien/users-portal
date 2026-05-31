@@ -1,0 +1,1 @@
+export { <%= capitalcase(name) %>Facade } from './lib/<%= name %>.facade';

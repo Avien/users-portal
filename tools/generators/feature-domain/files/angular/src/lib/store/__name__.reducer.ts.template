@@ -1,0 +1,32 @@
+import { createReducer, on } from '@ngrx/store';
+import { <%= capitalcase(name) %>Actions } from './<%= name %>.actions';
+import { <%= camelcase(name) %>Adapter, initial<%= capitalcase(name) %>State, type <%= capitalcase(name) %>State } from './<%= name %>.state';
+
+export const <%= camelcase(name) %>Reducer = createReducer(
+  initial<%= capitalcase(name) %>State,
+
+  on(<%= capitalcase(name) %>Actions.load<%= capitalcase(name) %>, (state): <%= capitalcase(name) %>State => ({
+    ...state,
+    loading: true,
+    loaded: false,
+    error: null,
+  })),
+
+  on(<%= capitalcase(name) %>Actions.load<%= capitalcase(name) %>Success, (state, { items }): <%= capitalcase(name) %>State => ({
+    ...<%= camelcase(name) %>Adapter.setAll(items, state),
+    loading: false,
+    loaded: true,
+  })),
+
+  on(<%= capitalcase(name) %>Actions.load<%= capitalcase(name) %>Failure, (state, { error }): <%= capitalcase(name) %>State => ({
+    ...state,
+    loading: false,
+    loaded: true,
+    error,
+  })),
+
+  on(<%= capitalcase(name) %>Actions.select<%= capitalcase(name) %>, (state, { id }): <%= capitalcase(name) %>State => ({
+    ...state,
+    selectedId: id,
+  })),
+);
