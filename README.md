@@ -542,3 +542,34 @@ The architecture is encoded into reusable Claude Code commands (`.claude/command
 ```
 
 > "The tech lead's job is to make AI follow the architecture, not invent a new one every time."
+
+### Nx Generator — `feature-domain`
+
+For creating a brand-new feature domain, a custom Nx generator scaffolds the full dual-framework skeleton from a single command.
+
+```bash
+npm run g:feature-domain -- <domain-name>
+```
+
+**Example:**
+```bash
+npm run g:feature-domain -- products
+```
+
+Generates **35 files across 4 libs** and updates `tsconfig.base.json` path aliases automatically:
+
+| Output | Contents |
+| :--- | :--- |
+| `libs/products/` | Shared contract — `Product` model, `IProductsFacadeInteractions`, `ProductsVm`, mock data |
+| `libs/products-angular/data-access/` | NgRx actions, reducer, effects, selectors + `ProductsFacade` (Angular Signals, `inject()`) |
+| `libs/products-react/data-access/` | `fetchProducts()` API fn + Zustand store for UI state |
+| `libs/products-react/feature/` | `useProductsFacade()` hook returning `ProductsVm & IProductsFacadeInteractions` |
+
+The generator enforces architecture at **creation time** — correct Nx tags, layer boundaries, shared contract shape, and framework conventions are baked in before a single line of feature code is written. The slash commands then enforce it during **ongoing development**.
+
+| Tool | When | Enforces |
+| :--- | :--- | :--- |
+| Generator | New domain | Structure, tags, contracts, facades |
+| `/new-component` | New UI component | Layer placement, memo/OnPush, props-only |
+| `/sync-contract` | New shared type or method | Dual-framework propagation, validates |
+| `/architecture-check` | Before PR | Drift detection across all layers |
