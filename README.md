@@ -518,3 +518,27 @@ This project was built across two phases, each with a different AI pairing:
 - All decisions (patterns, naming, boundaries) were reviewed and approved incrementally
 - Serves as a learning exercise in how the same domain maps across two very different frontend paradigms
 
+### Claude Code Slash Commands
+
+The architecture is encoded into reusable Claude Code commands (`.claude/commands/`). These make AI follow the project's conventions automatically rather than reinventing them each time.
+
+| Command | Usage | What it does |
+| :--- | :--- | :--- |
+| `/new-component` | `/new-component <name> <angular\|react>` | Scaffolds a presentational component in the correct lib with all conventions applied (React.memo / OnPush, input signals, layer rules) |
+| `/sync-contract` | `/sync-contract <description>` | Adds a shared type or method to `@portal/users/utils` and propagates it to both the Angular and React facades, then runs both validates |
+| `/architecture-check` | `/architecture-check` | Audits the React codebase for layer boundary violations, cross-framework imports, Zustand scope, JSX logic leaks, and naming convention drift |
+
+**Example flows:**
+
+```bash
+# Scaffold a new React UI component
+/new-component order-status react
+
+# Add a new field to the shared Order contract
+/sync-contract add a 'priority' field to Order — high | medium | low
+
+# Check for architecture drift before a PR
+/architecture-check
+```
+
+> "The tech lead's job is to make AI follow the architecture, not invent a new one every time."
