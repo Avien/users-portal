@@ -565,6 +565,8 @@ Generates **35 files across 4 libs** and updates `tsconfig.base.json` path alias
 | `libs/products-react/data-access/` | `fetchProducts()` API fn + Zustand store for UI state |
 | `libs/products-react/feature/` | `useProductsFacade()` hook returning `ProductsVm & IProductsFacadeInteractions` |
 
+After generating, fill in the model interface, replace mock data, add domain-specific interaction methods to `IXxxFacadeInteractions`, then implement them in both facades. Run `validate:angular` and `validate:react` before committing.
+
 The generator enforces architecture at **creation time** — correct Nx tags, layer boundaries, shared contract shape, and framework conventions are baked in before a single line of feature code is written. The slash commands then enforce it during **ongoing development**.
 
 | Tool | When | Enforces |

@@ -82,7 +82,39 @@ npm run validate:react     # tsc --noEmit + lint + test React projects + shared 
 npm run build:prod         # alias for build:angular (Vercel Angular deployment)
 npm run build:angular      # validate:angular → nx build users-portal-angular → dist/apps/users-portal-angular
 npm run build:react        # validate:react   → nx build users-portal-react   → dist/users-portal-react
+
+npm run g:feature-domain -- <name>  # scaffold new dual-framework feature domain (see Generator section)
 ```
+
+## Generator — New Feature Domain
+
+Use the `feature-domain` generator when scaffolding a **brand-new domain** (not a component or util — for those use `/new-component` and `/sync-contract`).
+
+```bash
+npm run g:feature-domain -- <domain-name>
+```
+
+What it generates from a single command:
+
+| Output | Contents |
+|---|---|
+| `libs/<name>/` | Shared contract — model interface, `I<Name>FacadeInteractions`, `<Name>Vm`, mock data |
+| `libs/<name>-angular/data-access/` | NgRx actions → reducer → effects → selectors + `<Name>Facade implements I<Name>FacadeInteractions` (Angular Signals, `inject()`) |
+| `libs/<name>-react/data-access/` | `fetch<Name>()` API fn + Zustand store for UI-only state |
+| `libs/<name>-react/feature/` | `use<Name>Facade()` hook returning `<Name>Vm & I<Name>FacadeInteractions` |
+
+Also updates `tsconfig.base.json` with all 4 path aliases automatically.
+
+**Rules after generating:**
+- Fill in the `<Name>` model interface in `libs/<name>/src/lib/models/<name>.interface.ts`
+- Replace `MOCK_<NAME>` array in `libs/<name>/src/lib/mocks/mock-data.ts` with real mock data
+- Add domain-specific interaction methods to `I<Name>FacadeInteractions` then implement in both facades
+- Run `npm run validate:angular && npm run validate:react` before committing
+
+**When NOT to use the generator:**
+- Adding a new component → `/new-component`
+- Adding a field or method to an existing shared contract → `/sync-contract`
+- The generator is for new domains only — it creates the full lib structure from scratch
 
 ## Module Boundary Tags
 
