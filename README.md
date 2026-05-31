@@ -522,24 +522,20 @@ This project was built across two phases, each with a different AI pairing:
 
 The architecture is encoded into reusable Claude Code commands (`.claude/commands/`). These make AI follow the project's conventions automatically rather than reinventing them each time.
 
+You don't need to know which command to run — just describe what you want in plain language and Claude reads `CLAUDE.md` to route you to the right tool:
+
+| You say | Claude runs |
+| :--- | :--- |
+| "add a status badge component to the orders card" | `/new-component` |
+| "add a priority field to the Order type" | `/sync-contract` |
+| "create a full products domain" | `npm run g:feature-domain -- products` |
+| "check for architecture drift before I PR this" | `/architecture-check` |
+
 | Command | Usage | What it does |
 | :--- | :--- | :--- |
 | `/new-component` | `/new-component <name> <angular\|react>` | Scaffolds a presentational component in the correct lib with all conventions applied (React.memo / OnPush, input signals, layer rules) |
 | `/sync-contract` | `/sync-contract <description>` | Adds a shared type or method to `@portal/users/utils` and propagates it to both the Angular and React facades, then runs both validates |
 | `/architecture-check` | `/architecture-check` | Audits the React codebase for layer boundary violations, cross-framework imports, Zustand scope, JSX logic leaks, and naming convention drift |
-
-**Example flows:**
-
-```bash
-# Scaffold a new React UI component
-/new-component order-status react
-
-# Add a new field to the shared Order contract
-/sync-contract add a 'priority' field to Order — high | medium | low
-
-# Check for architecture drift before a PR
-/architecture-check
-```
 
 > "The tech lead's job is to make AI follow the architecture, not invent a new one every time."
 
