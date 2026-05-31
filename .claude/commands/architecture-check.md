@@ -18,7 +18,7 @@ Scan `libs/users-react/` and `apps/users-portal-react/src/` for:
 ### 3. Naming convention violations
 - Files: must be kebab-case
 - Component exports: must be PascalCase
-- Hook exports: must start with `use`
+- Hook exports: must start with `use` — only applies to files named `use-*.ts` or `use-*.tsx`; plain utility functions and API functions are exempt
 - Facade files: must follow `use-[name]-facade.ts`
 
 ### 4. JSX logic violations
