@@ -571,3 +571,5 @@ The generator enforces architecture at **creation time** — correct Nx tags, la
 | `/new-component` | New UI component | Layer placement, memo/OnPush, props-only |
 | `/sync-contract` | New shared type or method | Dual-framework propagation, validates |
 | `/architecture-check` | Before PR | Drift detection across all layers |
+
+**Roadmap:** The next step is a fully autonomous agent (`tools/agent.mjs`) — describe a goal in plain language and the agent reasons over `CLAUDE.md`, picks the right tools, runs them in sequence, and validates the result without step-by-step human prompting.
