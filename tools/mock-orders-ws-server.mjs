@@ -4,14 +4,17 @@ const PORT = process.env['PORT'] ? Number(process.env['PORT']) : 3000;
 const wss = new WebSocketServer({ port: PORT, path: '/orders' });
 
 // Keep in sync with `libs/users/data-access/src/lib/services/user.mocks.ts` (MOCK_ORDERS).
+const STATUSES = ['pending', 'processing', 'completed', 'cancelled'];
+const randomStatus = () => STATUSES[Math.floor(Math.random() * STATUSES.length)];
+
 const baseOrders = [
-  { id: 101, userId: 1, total: 120.5 },
-  { id: 102, userId: 1, total: 79.9 },
-  { id: 201, userId: 2, total: 220 },
-  { id: 202, userId: 2, total: 18.75 },
-  { id: 301, userId: 3, total: 510.1 },
-  { id: 302, userId: 3, total: 99.9 },
-  { id: 303, userId: 3, total: 45 }
+  { id: 101, userId: 1, total: 120.5,  status: 'completed'  },
+  { id: 102, userId: 1, total: 79.9,   status: 'pending'    },
+  { id: 201, userId: 2, total: 220,    status: 'processing' },
+  { id: 202, userId: 2, total: 18.75,  status: 'completed'  },
+  { id: 301, userId: 3, total: 510.1,  status: 'completed'  },
+  { id: 302, userId: 3, total: 99.9,   status: 'cancelled'  },
+  { id: 303, userId: 3, total: 45,     status: 'pending'    },
 ];
 
 const userIds = [1, 2, 3];
@@ -52,9 +55,9 @@ wss.on('connection', (socket) => {
 
   const emit = (userId, total = randomMoney()) => {
     const id = allocateNewId(userId);
-    const payload = { id, userId, total: Number(total.toFixed(2)) };
+    const payload = { id, userId, total: Number(total.toFixed(2)), status: randomStatus() };
     liveOrders.set(payload.id, { ...payload });
-    console.log(`WS emit order id=${payload.id} userId=${payload.userId} total=${payload.total}`);
+    console.log(`WS emit order id=${payload.id} userId=${payload.userId} total=${payload.total} status=${payload.status}`);
     socket.send(JSON.stringify({ type: 'order-update', payload }));
   };
 

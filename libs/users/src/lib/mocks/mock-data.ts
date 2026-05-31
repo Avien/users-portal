@@ -8,11 +8,11 @@ export const MOCK_USERS: User[] = [
 ];
 
 export const MOCK_ORDERS: Order[] = [
-  { id: 101, userId: 1, total: 120.5 },
-  { id: 102, userId: 1, total: 79.9 },
-  { id: 201, userId: 2, total: 220 },
-  { id: 202, userId: 2, total: 18.75 },
-  { id: 301, userId: 3, total: 510.1 },
-  { id: 302, userId: 3, total: 99.9 },
-  { id: 303, userId: 3, total: 45 },
+  { id: 101, userId: 1, total: 120.5,  status: 'completed'  },
+  { id: 102, userId: 1, total: 79.9,   status: 'pending'    },
+  { id: 201, userId: 2, total: 220,    status: 'processing' },
+  { id: 202, userId: 2, total: 18.75,  status: 'completed'  },
+  { id: 301, userId: 3, total: 510.1,  status: 'completed'  },
+  { id: 302, userId: 3, total: 99.9,   status: 'cancelled'  },
+  { id: 303, userId: 3, total: 45,     status: 'pending'    },
 ];

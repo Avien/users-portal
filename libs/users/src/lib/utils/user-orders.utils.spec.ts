@@ -10,9 +10,9 @@ import { User } from '../models/user.interface';
 
 describe('user-orders.utils', () => {
   const mockOrders: Order[] = [
-    { id: 1, userId: 101, total: 10 },
-    { id: 2, userId: 101, total: 15.5 },
-    { id: 3, userId: 202, total: 7.25 }
+    { id: 1, userId: 101, total: 10,   status: 'completed' },
+    { id: 2, userId: 101, total: 15.5, status: 'pending'   },
+    { id: 3, userId: 202, total: 7.25, status: 'completed' }
   ];
 
   const mockUser: User = {
@@ -23,8 +23,8 @@ describe('user-orders.utils', () => {
   describe('getOrdersByUserId', () => {
     it('should return only orders for the selected user sorted by id ascending', () => {
       expect(getOrdersByUserId(mockOrders, 101)).toEqual([
-        { id: 1, userId: 101, total: 10 },
-        { id: 2, userId: 101, total: 15.5 }
+        { id: 1, userId: 101, total: 10,   status: 'completed' },
+        { id: 2, userId: 101, total: 15.5, status: 'pending'   }
       ]);
     });
 
@@ -47,8 +47,8 @@ describe('user-orders.utils', () => {
     it('should build vm when user exists', () => {
       expect(
         buildUserTotalOrdersVm(mockUser, [
-          { id: 1, userId: 101, total: 10 },
-          { id: 2, userId: 101, total: 15.5 }
+          { id: 1, userId: 101, total: 10,   status: 'completed' },
+          { id: 2, userId: 101, total: 15.5, status: 'pending'   }
         ])
       ).toEqual({
         userName: 'Avi',
@@ -63,13 +63,13 @@ describe('user-orders.utils', () => {
 
   describe('normalizeOrderUserIdFromId', () => {
     it('should leave the order unchanged when userId already matches id convention', () => {
-      const order: Order = { id: 304, userId: 3, total: 10 };
+      const order: Order = { id: 304, userId: 3, total: 10, status: 'pending' };
       expect(normalizeOrderUserIdFromId(order)).toBe(order);
     });
 
     it('should rewrite userId from id when payload is inconsistent', () => {
-      const order: Order = { id: 304, userId: 1, total: 10 };
-      expect(normalizeOrderUserIdFromId(order)).toEqual({ id: 304, userId: 3, total: 10 });
+      const order: Order = { id: 304, userId: 1, total: 10, status: 'pending' };
+      expect(normalizeOrderUserIdFromId(order)).toEqual({ id: 304, userId: 3, total: 10, status: 'pending' });
     });
   });
 });
