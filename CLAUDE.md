@@ -14,8 +14,9 @@ Nx monorepo containing two parallel implementations of the same domain:
 
 ```
 apps/
-  users-portal-angular/     ← Angular app (touch only when adding shared contracts)
-  users-portal-react/       ← React app (actively developed)
+  portal-shell/             ← Vanilla JS landing page / MFE shell (no build step, port 4000)
+  users-portal-angular/     ← Angular app + MFE host (touch only when adding shared contracts)
+  users-portal-react/       ← React app + MFE remote (actively developed)
 
 libs/
   users/  (@portal/users/utils)   ← framework-agnostic, shared by BOTH apps
@@ -69,13 +70,14 @@ These interfaces are the single source of truth for both Angular and React:
 ## npm Scripts
 
 ```bash
-npm start                  # serve Angular app
+npm run start:angular      # serve Angular app (http://localhost:4200)
 npm run start:react        # serve React app (http://localhost:4201)
+npm run start:shell        # serve vanilla JS shell (http://localhost:4000)
 npm run mock:ws            # start local WS mock server at ws://localhost:3000/orders
 
 npm run validate           # lint + test all projects
 npm run validate:angular   # lint + test Angular projects + shared (tag:framework:angular + tag:framework:shared)
-npm run validate:react     # lint + test React projects + shared (tag:framework:react + tag:framework:shared)
+npm run validate:react     # tsc --noEmit + lint + test React projects + shared (tag:framework:react + tag:framework:shared)
 
 npm run build:prod         # alias for build:angular (Vercel Angular deployment)
 npm run build:angular      # validate:angular → nx build users-portal-angular → dist/apps/users-portal-angular

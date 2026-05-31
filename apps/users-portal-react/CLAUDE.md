@@ -11,7 +11,7 @@ Inherits workspace rules from `/CLAUDE.md`. This file covers React-specific conv
 - [x] Memoization — `React.memo`, `useMemo`, `useCallback`
 - [x] `useEffect` — async data loading, cleanup, cancelled flag pattern
 - [x] TanStack Query — `useQuery` for users + orders per user, `staleTime: Infinity` on orders
-- [x] Zustand store — `selectedUserId`, `notifications`, `addNotification` with auto-dismiss timers
+- [x] Zustand store — `notifications` only, `addNotification` with auto-dismiss timers (`selectedUserId` lives in URL, not store)
 - [x] `useUsersFacade` — facade hook in `libs/users-react/feature/`, returns `UserOrdersVm & IUsersFacadeInteractions`
 - [x] Shared contracts — `UserOrdersVm & IUsersFacadeInteractions` from `@portal/users/utils`
 - [x] WebSocket stream — `useOrdersStream` in `libs/users-react/data-access`, called from `App`
@@ -21,10 +21,11 @@ Inherits workspace rules from `/CLAUDE.md`. This file covers React-specific conv
 - [x] Virtual scroll — `@tanstack/react-virtual` on the orders list (8-row viewport, 52px fixed row height)
 - [x] Nx libs — `users-react/data-access`, `feature`, `ui` all generated and tagged
 
-### Planned
 - [x] React Router — /users/:userId, BrowserRouter, URL-driven selectedUserId
 - [x] Error Boundaries — ErrorBoundary class component in users-react/ui, wraps Routes in app.tsx
 - [x] Vite env var — VITE_ORDERS_WS_URL, falls back to DEFAULT_ORDERS_WS_URL from shared utils
+- [x] MFE — React app exposes mount() as Module Federation remote; Angular host loads it via loadRemote()
+- [x] GitHub Actions CI — validate:angular + validate:react jobs, parallel, with Nx cache
 
 ---
 
@@ -36,7 +37,7 @@ Inherits workspace rules from `/CLAUDE.md`. This file covers React-specific conv
 |---|---|---|
 | Domain models + mock data | `@portal/users/utils` | Pure TS, no framework, shared with Angular |
 | API functions | `users-react/data-access/api/` | Plain async functions, no React |
-| Zustand store | `users-react/data-access/store/` | UI state only — selectedUserId, notifications |
+| Zustand store | `users-react/data-access/store/` | UI state only — notifications (selectedUserId lives in URL via React Router) |
 | WebSocket hook | `users-react/data-access/stream/` | Singleton side-effect, called once from App |
 | Facade hook | `users-react/feature/` | Composes data-access, returns `UserOrdersVm & IUsersFacadeInteractions` |
 | Smart component | App or feature | Calls `useUsersFacade()`, passes props down |
