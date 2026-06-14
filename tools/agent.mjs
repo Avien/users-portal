@@ -32,8 +32,26 @@ if (!goal) {
   console.error('Usage: node tools/agent.mjs "<natural-language goal>" [--yes]');
   process.exit(1);
 }
+
+// Load a root .env (dependency-free) so you can just `npm run agent -- "..."`.
+// A real environment variable always wins over a .env entry.
+const loadEnv = () => {
+  const envPath = resolve(REPO_ROOT, '.env');
+  if (!existsSync(envPath)) return;
+  for (const raw of readFileSync(envPath, 'utf8').split('\n')) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const eq = line.indexOf('=');
+    if (eq === -1) continue;
+    const key = line.slice(0, eq).replace(/^export\s+/, '').trim();
+    const value = line.slice(eq + 1).trim().replace(/^(['"])(.*)\1$/, '$2');
+    if (key && process.env[key] === undefined) process.env[key] = value;
+  }
+};
+loadEnv();
+
 if (!process.env['ANTHROPIC_API_KEY']) {
-  console.error('Set ANTHROPIC_API_KEY in your environment first.');
+  console.error('Set ANTHROPIC_API_KEY in your environment or in a .env file at the repo root.');
   process.exit(1);
 }
 
