@@ -539,7 +539,30 @@ You don't need to know which command to run — just describe what you want in p
 
 > "The tech lead's job is to make AI follow the architecture, not invent a new one every time."
 
-**Roadmap:** The next step is a fully autonomous agent (`tools/agent.mjs`) — describe a goal in plain language and the agent reasons over `CLAUDE.md`, picks the right tools, runs them in sequence, and validates the result without step-by-step human prompting.
+### Autonomous Agent — `tools/agent.mjs`
+
+Where the slash commands above run inside Claude Code, this is a standalone agent built directly on the **Claude API** — a hand-rolled tool-use loop, not a wrapper around an existing tool. Describe a goal in plain language and it scaffolds and wires up a whole new feature domain end to end, without step-by-step human prompting.
+
+```bash
+# autonomous — runs the full trajectory unattended
+ANTHROPIC_API_KEY=sk-... npm run agent -- "create a products domain with name, price, category and a selectProduct interaction" --yes
+
+# interactive — prompts for approval before each mutating step (drop --yes)
+ANTHROPIC_API_KEY=sk-... npm run agent -- "create a products domain with name and price"
+```
+
+**How it works** — the same `CLAUDE.md` that governs Claude Code in this repo is loaded *verbatim* as the agent's system prompt, with a thin operating layer on top. The agent then reasons over that and drives the loop itself: `model → tool → result → model`, until the domain is scaffolded, wired in both frameworks, and validation passes.
+
+| Tool | What the agent does with it |
+| :--- | :--- |
+| `scaffold_domain` | Runs the `feature-domain` generator to create all four libs + path aliases |
+| `list_files` / `read_file` | Inspects what the generator produced before editing |
+| `write_file` / `edit_file` | Fills in the model interface, mock data, and interaction methods in **both** facades |
+| `run_validation` | Runs `validate:angular` / `validate:react` and fixes anything that fails before finishing |
+
+Built on `claude-opus-4-8` with adaptive thinking; file operations are confined to the repo root, and mutating tools require confirmation unless `--yes` is passed. The point isn't to replace Claude Code — it's to show the tool-use loop from the inside: schema design, the agentic loop, approval gating, and using the project's own architecture as the agent's knowledge base.
+
+> "The tech lead's job is to make AI follow the architecture, not invent a new one every time — whether that AI is a pair-programmer or an autonomous loop you built yourself."
 
 ### Nx Generator — `feature-domain`
 

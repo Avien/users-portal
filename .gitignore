@@ -46,6 +46,7 @@ Thumbs.db
 vite.config.*.timestamp*
 
 # local env overrides — never commit
+.env
 .env.local
 .env.*.local
 .vercel
