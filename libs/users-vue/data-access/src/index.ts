@@ -1,4 +1,4 @@
-// @portal/users-vue/data-access
-// Phase 1 will add: API functions (fetchUsers / fetchOrdersByUser), the Pinia
-// notifications store, drainPendingOrders, and the useOrdersStream composable.
-export {};
+export { fetchUsers } from './lib/api/users.api';
+export { fetchOrdersByUser } from './lib/api/orders.api';
+export { useUsersStore } from './lib/store/users.store';
+export { useOrdersStream, drainPendingOrders } from './lib/stream/use-orders-stream';
