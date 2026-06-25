@@ -1,7 +1,7 @@
 Create a new presentational component following all project conventions.
 
 Arguments: $ARGUMENTS
-(e.g. "user-badge react" or "order-summary angular")
+(e.g. "user-badge react", "order-summary angular", or "order-summary vue")
 
 If no framework is specified in the arguments, ask the user before proceeding.
 
@@ -84,7 +84,54 @@ Add export to `libs/users-angular/ui/src/index.ts`
 
 ---
 
-## What NOT to do (either framework)
+## Vue component — `libs/users-vue/ui/`
+
+### Files to create
+```
+libs/users-vue/ui/src/lib/<component-name>/
+  <component-name>.vue
+```
+
+### Rules
+- Single-file component with `<script setup lang="ts">` — one component per file
+- Props via a `<ComponentName>Props` interface + `defineProps<<ComponentName>Props>()` (use `withDefaults` for defaults)
+- Events via typed `defineEmits` — the parent listens with `@event` (the `@Output()` / callback-prop equivalent)
+- No memoization needed — Vue reactivity is fine-grained (no `React.memo` / `OnPush` analog)
+- No data fetching, no Pinia, no vue-query — props in, template out; the facade composable owns all state
+- Import domain types from `@portal/users/utils`, never redefine them
+- No inline derivations in the template (no `.filter(`, `.sort(`) — `v-for` over already-prepared arrays only
+- `:key` required on any `v-for` over domain arrays (the `trackBy` / React `key` equivalent)
+- Styles go in a `<style scoped>` block
+
+### Template
+```vue
+<script setup lang="ts">
+interface <ComponentName>Props {
+  // props here
+}
+
+defineProps<<ComponentName>Props>();
+// const emit = defineEmits<{ (e: 'select', id: number): void }>();
+</script>
+
+<template>
+  <div>
+    <!-- content -->
+  </div>
+</template>
+
+<style scoped></style>
+```
+
+### Wire up
+Add export to `libs/users-vue/ui/src/index.ts`:
+```ts
+export { default as <ComponentName> } from './lib/<component-name>/<component-name>.vue';
+```
+
+---
+
+## What NOT to do (any framework)
 - Do not place in `apps/` — that is the app shell only
 - Do not import across frameworks (`@portal/users-angular/*` in React or vice versa)
 - Do not add state management — the facade hook / NgRx facade owns all state

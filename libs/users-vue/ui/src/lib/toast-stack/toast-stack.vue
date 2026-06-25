@@ -1,0 +1,81 @@
+<script setup lang="ts">
+import type { Notification } from '@portal/users/utils';
+
+interface ToastStackProps {
+  notifications: Notification[];
+}
+
+defineProps<ToastStackProps>();
+const emit = defineEmits<{ (e: 'dismiss', id: string): void }>();
+</script>
+
+<template>
+  <div class="stack" aria-live="polite" aria-relevant="additions">
+    <div v-for="n in notifications" :key="n.id" :class="['toast', n.severity]">
+      <div class="title">{{ n.severity === 'critical' ? 'Critical' : 'Warning' }}</div>
+      <div class="message">{{ n.message }}</div>
+      <button
+        class="close"
+        type="button"
+        aria-label="Dismiss notification"
+        @click="emit('dismiss', n.id)"
+      >
+        ×
+      </button>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.stack {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(360px, calc(100vw - 32px));
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: #f8fafc;
+  position: relative;
+}
+.toast.warning {
+  border-color: rgba(234, 179, 8, 0.55);
+  background: rgba(254, 243, 199, 0.95);
+}
+.toast.critical {
+  border-color: rgba(220, 38, 38, 0.55);
+  background: rgba(254, 226, 226, 0.95);
+}
+.title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.message {
+  font-size: 13px;
+  line-height: 1.35;
+  padding-right: 22px;
+}
+.close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  color: rgba(0, 0, 0, 0.55);
+}
+</style>
