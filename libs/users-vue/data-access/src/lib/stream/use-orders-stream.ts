@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import { onMounted, onScopeDispose } from 'vue';
 import { useQueryClient } from '@tanstack/vue-query';
 import type { Order, OrderMonitoringState, User } from '@portal/users/utils';
