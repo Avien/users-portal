@@ -21,7 +21,10 @@
       "@portal/users/utils": ["libs/users/src/index.ts"],
       "@portal/users-react/data-access": ["libs/users-react/data-access/src/index.ts"],
       "@portal/users-react/feature": ["libs/users-react/feature/src/index.ts"],
-      "@portal/users-react/ui": ["libs/users-react/ui/src/index.ts"]
+      "@portal/users-react/ui": ["libs/users-react/ui/src/index.ts"],
+      "@portal/users-vue/data-access": ["libs/users-vue/data-access/src/index.ts"],
+      "@portal/users-vue/feature": ["libs/users-vue/feature/src/index.ts"],
+      "@portal/users-vue/ui": ["libs/users-vue/ui/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "tmp"]

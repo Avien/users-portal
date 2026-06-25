@@ -1,0 +1,7 @@
+{
+  "name": "users-vue-data-access",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/users-vue/data-access/src",
+  "projectType": "library",
+  "tags": ["scope:users-vue", "type:data-access", "framework:vue"]
+}

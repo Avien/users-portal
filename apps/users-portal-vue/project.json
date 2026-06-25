@@ -1,0 +1,7 @@
+{
+  "name": "users-portal-vue",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/users-portal-vue/src",
+  "projectType": "application",
+  "tags": ["framework:vue"]
+}
