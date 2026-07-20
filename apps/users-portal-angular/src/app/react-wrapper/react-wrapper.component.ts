@@ -4,13 +4,11 @@ import {
   ElementRef,
   OnDestroy,
   ViewChild,
+  inject,
 } from '@angular/core';
 import { loadRemote } from '@module-federation/runtime';
-
-type MountFn = (
-  container: HTMLElement,
-  opts: { initialPath: string }
-) => () => void;
+import { type MountMfe } from '@portal/platform';
+import { PlatformService } from '../platform/platform.service';
 
 @Component({
   selector: 'app-react-wrapper',
@@ -22,10 +20,14 @@ export class ReactWrapperComponent implements AfterViewInit, OnDestroy {
   @ViewChild('reactRoot') container!: ElementRef<HTMLElement>;
   private unmount?: () => void;
 
+  // Consume the shell's platform singleton — the wrapper never builds its own.
+  private readonly platform = inject(PlatformService);
+
   async ngAfterViewInit() {
-    const mod = await loadRemote<{ mount: MountFn }>('react-users/mount');
+    const mod = await loadRemote<{ mount: MountMfe }>('react-users/mount');
     this.unmount = mod!.mount(this.container.nativeElement, {
       initialPath: '/users',
+      platform: this.platform.sdk,
     });
   }
 

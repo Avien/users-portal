@@ -15,6 +15,7 @@
     "skipDefaultLibCheck": true,
     "baseUrl": ".",
     "paths": {
+      "@portal/platform": ["libs/platform/src/index.ts"],
       "@portal/users-angular/data-access": ["libs/users-angular/data-access/src/index.ts"],
       "@portal/users-angular/ui": ["libs/users-angular/ui/src/index.ts"],
       "@portal/users-angular/feature": ["libs/users-angular/feature/src/index.ts"],

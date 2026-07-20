@@ -6,6 +6,11 @@ vi.mock('./app/app', () => ({
   default: () => <div data-testid="app" />,
 }));
 
+// Minimal platform the host would inject at mount.
+const platform = {
+  events: { emit: vi.fn(), on: vi.fn(() => vi.fn()) },
+};
+
 describe('mount', () => {
   let container: HTMLDivElement;
 
@@ -17,7 +22,7 @@ describe('mount', () => {
     container = document.createElement('div');
     document.body.appendChild(container);
 
-    await act(async () => { mount(container, { initialPath: '/users' }); });
+    await act(async () => { mount(container, { initialPath: '/users', platform }); });
 
     expect(container.querySelector('[data-testid="app"]')).toBeTruthy();
   });
@@ -27,7 +32,7 @@ describe('mount', () => {
     document.body.appendChild(container);
 
     let unmount!: () => void;
-    await act(async () => { unmount = mount(container, { initialPath: '/users' }); });
+    await act(async () => { unmount = mount(container, { initialPath: '/users', platform }); });
     expect(container.querySelector('[data-testid="app"]')).toBeTruthy();
 
     act(() => { unmount(); });

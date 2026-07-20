@@ -39,7 +39,7 @@ describe('ReactWrapperComponent', () => {
 
     expect(mockMount).toHaveBeenCalledWith(
       expect.any(HTMLElement),
-      { initialPath: '/users' }
+      expect.objectContaining({ initialPath: '/users' })
     );
   });
 

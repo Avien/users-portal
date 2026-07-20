@@ -1,0 +1,13 @@
+{
+  "name": "platform",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/platform/src",
+  "prefix": "lib",
+  "projectType": "library",
+  "tags": ["type:utils", "scope:platform", "framework:shared"],
+  "targets": {
+    "lint": {
+      "executor": "@nx/eslint:lint"
+    }
+  }
+}

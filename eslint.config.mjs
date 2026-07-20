@@ -27,7 +27,7 @@ export default [
           depConstraints: [
             {
               sourceTag: 'type:app',
-              onlyDependOnLibsWithTags: ['type:feature', 'type:data-access']
+              onlyDependOnLibsWithTags: ['type:feature', 'type:data-access', 'type:utils']
             },
             {
               sourceTag: 'type:feature',
