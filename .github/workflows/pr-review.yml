@@ -1,0 +1,46 @@
+name: PR Architecture Review
+
+on:
+  pull_request:
+    branches: [main]
+
+# Advisory only — this job comments, it never blocks a merge.
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  architecture-review:
+    name: Architecture review
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need the base branch to diff against
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Fetch base branch
+        run: git fetch --no-tags origin ${{ github.base_ref }}
+
+      - name: Generate architecture review
+        continue-on-error: true # a transient API error must never fail the PR
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: node tools/pr-review-agent.mjs --base origin/${{ github.base_ref }} | tee review.md
+
+      - name: Post review comment
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -s review.md ]; then
+            gh pr comment "${{ github.event.pull_request.number }}" --body-file review.md
+          else
+            echo "No review output — skipping comment."
+          fi

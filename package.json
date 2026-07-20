@@ -12,6 +12,7 @@
     "start:shell": "npx serve apps/portal-shell --listen 4000",
     "mock:ws": "node tools/mock-orders-ws-server.mjs",
     "agent": "node tools/agent.mjs",
+    "pr-review": "node tools/pr-review-agent.mjs",
     "validate": "npm run lint && npm run test",
     "validate:angular": "nx run-many -t lint test --projects=tag:framework:angular,tag:framework:shared",
     "validate:react": "tsc --noEmit -p apps/users-portal-react/tsconfig.app.json && nx run-many -t lint test --projects=tag:framework:react,tag:framework:shared",
