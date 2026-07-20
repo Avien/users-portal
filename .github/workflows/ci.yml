@@ -54,3 +54,27 @@ jobs:
             nx-react-${{ runner.os }}-
 
       - run: npm run validate:react
+
+  validate-vue:
+    name: Validate Vue
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Cache Nx computation cache
+        uses: actions/cache@v4
+        with:
+          path: .nx/cache
+          key: nx-vue-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
+          restore-keys: |
+            nx-vue-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+            nx-vue-${{ runner.os }}-
+
+      - run: npm run validate:vue
