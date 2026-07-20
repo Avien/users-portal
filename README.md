@@ -82,7 +82,7 @@ portal-shell (vanilla JS)
                        └── /hybrid route → ReactWrapperComponent
                                               └── loadRemote('react-users/mount')
                                                     └── users-portal-react (remote)
-                                                          mount(container, { initialPath: '/users' })
+                                                          mount(container, { initialPath: '/users', platform })
 ```
 
 ### Packages
@@ -94,32 +94,52 @@ portal-shell (vanilla JS)
 
 ### React remote — `mount()` API
 
-The React app exposes a single framework-agnostic function via `src/mount.tsx`:
+The React app exposes a single framework-agnostic function via `src/mount.tsx`, typed by the shared `MountMfe` contract:
 
 ```ts
-export function mount(
+export const mount: MountMfe = (
   container: HTMLElement,
-  { initialPath }: { initialPath: string }
-): () => void
+  { initialPath, platform }: MfeMountOptions
+) => { /* … */ return unmount; };
 ```
 
-- **Owns everything**: `ReactDOM.createRoot`, `QueryClientProvider`, `MemoryRouter`
+- **Owns everything**: `ReactDOM.createRoot`, `QueryClientProvider`, `MemoryRouter`, and a `PlatformProvider` that exposes the injected SDK via `usePlatform()`
 - **Returns an unmount function** — Angular calls it in `ngOnDestroy`
 - **Module-scope `QueryClient` singleton** — survives Angular mount/unmount cycles without resetting cache
-- **Receives `initialPath`**, not domain props — React handles all internal navigation
+- **Receives `initialPath` + an injected `platform`** (a `PlatformSDK`), not domain props — React handles its own navigation and reads shared capabilities through the SDK (see [Platform SDK](#-platform-sdk--capabilities-injected-at-the-seam) below)
 
 ### Angular host — framework-agnostic wrapper
 
-`ReactWrapperComponent` has zero React knowledge — no React imports, no ReactDOM:
+`ReactWrapperComponent` has zero React knowledge — no React imports, no ReactDOM. It injects the shell's platform singleton and passes it through the mount contract:
 
 ```ts
+private readonly platform = inject(PlatformService);   // shell-owned singleton
+
 async ngAfterViewInit() {
-  const mod = await loadRemote<{ mount: MountFn }>('react-users/mount');
-  this.unmount = mod!.mount(this.container.nativeElement, { initialPath: '/users' });
+  const mod = await loadRemote<{ mount: MountMfe }>('react-users/mount');
+  this.unmount = mod!.mount(this.container.nativeElement, {
+    initialPath: '/users',
+    platform: this.platform.sdk,
+  });
 }
 ```
 
 `init()` in `main.ts` registers the remote URL at boot but makes no network request. The actual `remoteEntry.js` fetch only happens when the user navigates to `/hybrid`.
+
+### 🧩 Platform SDK — capabilities injected at the seam
+
+The host injects more than a path — it hands the remote a **platform capability object** it depends on *by interface*. The contract lives in a shared, framework-agnostic lib, **`@portal/platform`**:
+
+```ts
+interface PlatformSDK {
+  events: EventBus;   // typed cross-MFE pub/sub — extensible: auth, navigation, flags, …
+}
+```
+
+- **One contract, shared by shape** — `@portal/platform` owns `PlatformSDK`, `MfeMountOptions`, `MountMfe`, and a typed `EventBus`. Host and remote depend on the *shape*, not on each other's code, so the seam stays framework-agnostic (a future Vue MFE would consume the same contract).
+- **Built once at the shell root** — the Angular host's `PlatformService` (`providedIn: 'root'`) assembles the SDK a single time and injects the *same* instance into every MFE. One platform, shared — the same discipline as one WebSocket at the root, not one per route.
+- **Consumed by interface** — the remote reads it through a `usePlatform()` context and never knows whether it was mounted directly (same JS realm) or, in a future sandboxed setup, behind a `postMessage` proxy. Same `PlatformSDK` either way = location transparency.
+- **`EventBus`** — a typed, dependency-free pub/sub for cross-MFE *moments* (`user:selected`, `session:expired`). MFEs emit and subscribe but never import each other; it carries events, not state (state belongs in a store).
 
 ### Why `type: 'module'` matters
 
@@ -499,6 +519,7 @@ This project demonstrates:
 * **Facade pattern** in both frameworks: same public surface (`UserOrdersVm`), idiomatic internals
 * **WebSocket stream** with pending-buffer pattern and real-time order monitoring (shared pure logic)
 * **Hybrid MFE** — Module Federation 2.0, Angular host loads React remote at runtime, framework-agnostic `mount()` API
+* **Platform SDK** — shared `@portal/platform` contract injected at mount (host↔remote by interface), assembled once by a root `PlatformService`, with a typed cross-MFE `EventBus`
 * **Scoped CI scripts** — `validate:angular` / `validate:react` / `build:angular` / `build:react`
 
 
