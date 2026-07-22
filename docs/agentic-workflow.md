@@ -65,7 +65,20 @@ npm run pr-review -- --base origin/main
 ```
 
 - Loads `CLAUDE.md` **verbatim** as the system prompt — the bot enforces exactly the same rules Claude Code already follows in this repo, not a separately maintained rubric.
-- Diffs the PR against its base branch (`git diff <base>...HEAD`), sends it to `claude-opus-4-8` with a rubric focused on module boundaries, layer/altitude, shared-contract discipline, state placement, and naming — explicitly instructed to stay low-noise (silent unless genuinely confident it's real drift).
+- Diffs the PR against its base branch (`git diff <base>...HEAD`) and sends only that diff to `claude-opus-4-8` — it judges what changed, not the whole codebase, so it never flags pre-existing issues elsewhere in the repo.
+
+**What it actually checks:**
+
+| Category | Flags |
+| :--- | :--- |
+| Module boundaries | A `ui`/`data-access` lib importing "upward"; one `feature` importing another `feature`; cross-framework imports (Angular ↔ React ↔ Vue); an app reaching past `feature`/`data-access` |
+| Layer / altitude | Business logic (filter/sort/derive/map) living in a component or template instead of the facade; a dumb component importing a store, query client, or router; view-derived state that belongs in the ViewModel |
+| Contract discipline | A domain type redefined in app code instead of imported from `@portal/*/utils`; a facade not returning the shared `Vm & IFacadeInteractions` shape |
+| State placement | A Zustand/Pinia store holding server state or route-derivable state; a WebSocket or singleton created inside a route-bound facade instead of the app root |
+| Naming conventions | Non-kebab-case files, non-PascalCase component exports, hooks not `use`-prefixed camelCase, shared interfaces missing the `I` prefix, facade files not named `use-[name]-facade.ts` |
+
+It's explicitly instructed to stay **low-noise** — no formatting nitpicks, no subjective style opinions, no hypotheticals, only what it's genuinely confident is real drift introduced by that diff. Output is forced into a fixed shape: one verdict line (`✅ No architecture drift found.` or `⚠️ N issue(s) found:`) followed by `path:line` bullets — and that verdict line is exactly what the exit-code check parses to decide pass/fail (see below).
+
 - Wired into `.github/workflows/pr-review.yml`: runs on every PR to `main`, posts the review as a PR comment via `gh pr comment`, and **fails the job when the rubric's own verdict line signals drift** (`process.exit(1)` on a `⚠️` verdict) — a script/API failure now also fails the job, on the theory that "couldn't verify" shouldn't silently pass. To make this an actual merge gate rather than just a red/green badge, add "Architecture review" as a **required status check** in the `main` branch protection rule (GitHub Settings → Branches) — without that rule the job still runs and reports status, but nothing stops a PR from merging around it.
 - Verified locally against two synthetic diffs before shipping: one with real violations (a `ui` component importing a Zustand store, business logic in JSX, a redefined domain type) — correctly flagged all three — and one clean contract-only change — correctly stayed silent.
 
