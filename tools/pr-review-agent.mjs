@@ -154,3 +154,7 @@ const review = message.content
   .trim();
 
 process.stdout.write(`${MARKER}\n${review || '_No review produced._'}\n`);
+
+// Required-check semantics: exit non-zero when the rubric's own verdict line
+// signals drift, so CI fails the job and branch protection can block the merge.
+process.exit(/⚠️/.test(review) ? 1 : 0);

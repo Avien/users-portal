@@ -73,7 +73,7 @@ npm run pr-review -- --base origin/main
 
 - Loads `CLAUDE.md` **verbatim** as the system prompt — the bot enforces exactly the same rules Claude Code already follows in this repo, not a separately maintained rubric.
 - Diffs the PR against its base branch (`git diff <base>...HEAD`), sends it to `claude-opus-4-8` with a rubric focused on module boundaries, layer/altitude, shared-contract discipline, state placement, and naming — explicitly instructed to stay low-noise (silent unless genuinely confident it's real drift).
-- Wired into `.github/workflows/pr-review.yml`: runs on every PR to `main`, posts the review as a PR comment via `gh pr comment`. **Advisory only** — every step uses `continue-on-error: true`, so a missing secret or a transient API failure never blocks a merge.
+- Wired into `.github/workflows/pr-review.yml`: runs on every PR to `main`, posts the review as a PR comment via `gh pr comment`, and **fails the job when the rubric's own verdict line signals drift** (`process.exit(1)` on a `⚠️` verdict) — a script/API failure now also fails the job, on the theory that "couldn't verify" shouldn't silently pass. To make this an actual merge gate rather than just a red/green badge, add "Architecture review" as a **required status check** in the `main` branch protection rule (GitHub Settings → Branches) — without that rule the job still runs and reports status, but nothing stops a PR from merging around it.
 - Verified locally against two synthetic diffs before shipping: one with real violations (a `ui` component importing a Zustand store, business logic in JSX, a redefined domain type) — correctly flagged all three — and one clean contract-only change — correctly stayed silent.
 
 ## Nx Generator — `feature-domain`

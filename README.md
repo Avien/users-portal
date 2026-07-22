@@ -80,7 +80,7 @@ The Angular app was built with ChatGPT + Cursor; the React app was rebuilt with 
 | **Slash commands** (`.claude/commands/`) | `/new-component`, `/sync-contract`, `/architecture-check` — say what you want in plain language, Claude routes to the right one |
 | **Nx generator** (`feature-domain`) | `npm run g:feature-domain -- <name>` scaffolds a full dual-framework feature domain (35 files, both facades, path aliases) in one command |
 | **Autonomous agent** (`tools/agent.mjs`) | A hand-rolled Claude API tool-use loop — describe a goal, it scaffolds + edits + validates across both frameworks unattended |
-| **PR review agent** (`tools/pr-review-agent.mjs`) | GitHub Actions bot — reviews every PR diff for architecture drift against `CLAUDE.md`, posts an advisory comment (`continue-on-error`, never blocks) |
+| **PR review agent** (`tools/pr-review-agent.mjs`) | GitHub Actions bot — reviews every PR diff for architecture drift against `CLAUDE.md`, posts a comment, and **fails the check** on confirmed drift (required status check, once branch protection is enabled) |
 
 > "The tech lead's job is to make AI follow the architecture, not invent a new one every time."
 

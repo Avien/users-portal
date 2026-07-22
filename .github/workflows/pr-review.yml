@@ -4,7 +4,10 @@ on:
   pull_request:
     branches: [main]
 
-# Advisory only — this job comments, it never blocks a merge.
+# Required check — this job FAILS when real architecture drift is found.
+# Add "Architecture review" as a required status check in the main branch
+# protection rule for this to actually block merging; without that rule this
+# still just reports red/green on the PR without stopping anyone from merging.
 permissions:
   contents: read
   pull-requests: write
@@ -29,13 +32,13 @@ jobs:
         run: git fetch --no-tags origin ${{ github.base_ref }}
 
       - name: Generate architecture review
-        continue-on-error: true # a transient API error must never fail the PR
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: node tools/pr-review-agent.mjs --base origin/${{ github.base_ref }} | tee review.md
 
       - name: Post review comment
-        continue-on-error: true
+        if: always() # post the comment whether the review passed or failed
+        continue-on-error: true # a comment-posting hiccup shouldn't mask the real verdict above
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
