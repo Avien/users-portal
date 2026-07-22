@@ -32,7 +32,7 @@ This Nx monorepo contains Angular, React, and Hybrid Microfrontend implementatio
 | App | Stack | Purpose |
 | :--- | :--- | :--- |
 | `apps/portal-shell` | Vanilla JS, no build step | Landing page — mode selector, redirects to any app |
-| `apps/users-portal-angular` | Angular 19, NgRx, Signals, OnPush | Reference implementation + Hybrid MFE host |
+| `apps/users-portal-angular` | Angular 21, NgRx, Signals, OnPush | Reference implementation + Hybrid MFE host |
 | `apps/users-portal-react` | React 19, TanStack Query, Zustand, Vite | Idiomatic React rebuild + MFE remote |
 
 The UI lists users and their orders. Selecting a user loads orders lazily with per-user caching; a WebSocket stream pushes live updates merged into the cache without overwriting lazily loaded data; high-value and burst orders trigger auto-dismissing toast notifications.
@@ -73,7 +73,7 @@ portal-shell (vanilla JS)
 
 ## 🤖 Agentic AI Development
 
-The Angular app was built with ChatGPT + Cursor; the React app was rebuilt with **Claude Code**, using this repo's own `CLAUDE.md` as the architectural source of truth. That same source of truth is then encoded into the tooling itself:
+Most of the implementation in this repository was built with **Claude Code**, while architecture, design, and review were led by me throughout. `CLAUDE.md` is the source of truth I maintain for those decisions — Claude Code, the autonomous agent, and the PR review bot all read it verbatim. That same source of truth is then encoded into the tooling itself:
 
 | Layer | What it does |
 | :--- | :--- |
@@ -104,11 +104,24 @@ On connect, the mock server immediately emits two orders for the same user (~0.5
 The facade draws a hard line between **Business Logic** (fetch/cache/derive/mutate — NgRx+Effects in Angular, TanStack Query+Zustand in React) and **Presentation Logic** (Angular components reading `$vm`; React components receiving props). Everything on the presentation side is purely props-in/events-out.
 
 ```
-   FACADE (Business Logic)  →  ViewModel + Interactions
-          │
-   Smart Component (reads VM, owns layout, aware facade exists)
-          │ props + callbacks
-   Dumb Components (many) — props in → renders out, OnPush / React.memo
+                   ┌─────────────────────────────┐
+                   │         FACADE               │
+                   │  (Business Logic boundary)   │
+  NgRx / TanStack ─┤  - fetches & caches data     ├─► ViewModel (UserOrdersVm)
+  Zustand / RxJS   │  - derives & memoises        │
+  Router / URL     │  - handles interactions      ├─► Interactions (selectUser, dismiss)
+                   └─────────────────────────────┘
+                                  │
+                    ┌─────────────▼────────────┐
+                    │      Smart Component      │
+                    │  (reads VM, owns layout)  │
+                    └─────────────┬────────────┘
+                                  │ props + callbacks
+                    ┌─────────────▼────────────┐
+                    │   Dumb Components (many)  │
+                    │  props in → renders out   │
+                    │  OnPush / React.memo      │
+                    └──────────────────────────┘
 ```
 
 | Without facade | With facade |
