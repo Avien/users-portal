@@ -37,6 +37,19 @@ This Nx monorepo contains Angular, React, and Hybrid Microfrontend implementatio
 
 The UI lists users and their orders. Selecting a user loads orders lazily with per-user caching; a WebSocket stream pushes live updates merged into the cache without overwriting lazily loaded data; high-value and burst orders trigger auto-dismissing toast notifications.
 
+## 🔔 Order Monitoring Notifications
+
+- **Warning** — a newly streamed order crosses the high-value threshold (`>= $500`)
+- **Critical** — the same user receives multiple new streamed orders within a 2-minute burst window
+- **Noise control** — bulk API hydration is ignored to avoid toast spam; only streamed events trigger toasts
+- Pure detection logic (`reduceOrderMonitoring`) lives in the shared `@portal/users/utils` lib — both facades run the same rule, wire it to their own state layer (NgRx effect vs Zustand action)
+
+**Try it locally:**
+```bash
+npm run mock:ws && npm start
+```
+On connect, the mock server immediately emits two orders for the same user (~0.5s/~1.5s in) to trigger the critical burst toast without waiting for the random stream. In production the same server runs persistently on Railway; Angular and React each read its URL from their own environment config.
+
 ## ⚖️ Architecture at a Glance
 
 Same domain, same facade contract (`UserOrdersVm & IUsersFacadeInteractions`), idiomatic internals per framework:
@@ -86,20 +99,9 @@ Most of the implementation in this repository was built with **Claude Code**, wh
 
 → Full breakdown — slash command examples, the agent's tool loop, generator internals, PR review agent design: **[docs/agentic-workflow.md](docs/agentic-workflow.md)**
 
-## 🔔 Order Monitoring Notifications
+## 🧠 Design Patterns
 
-- **Warning** — a newly streamed order crosses the high-value threshold (`>= $500`)
-- **Critical** — the same user receives multiple new streamed orders within a 2-minute burst window
-- **Noise control** — bulk API hydration is ignored to avoid toast spam; only streamed events trigger toasts
-- Pure detection logic (`reduceOrderMonitoring`) lives in the shared `@portal/users/utils` lib — both facades run the same rule, wire it to their own state layer (NgRx effect vs Zustand action)
-
-**Try it locally:**
-```bash
-npm run mock:ws && npm start
-```
-On connect, the mock server immediately emits two orders for the same user (~0.5s/~1.5s in) to trigger the critical burst toast without waiting for the random stream. In production the same server runs persistently on Railway; Angular and React each read its URL from their own environment config.
-
-## 🧠 Design Patterns — Reactive Facade
+### Reactive Facade
 
 The facade draws a hard line between **Business Logic** (fetch/cache/derive/mutate — NgRx+Effects in Angular, TanStack Query+Zustand in React) and **Presentation Logic** (Angular components reading `$vm`; React components receiving props). Everything on the presentation side is purely props-in/events-out.
 
@@ -131,7 +133,52 @@ The facade draws a hard line between **Business Logic** (fetch/cache/derive/muta
 | Testing requires mocking the whole state tree | Test with plain prop objects |
 | Business rules scattered across templates | BL lives in one place, independently testable |
 
-→ Per-framework facade implementations, both state-flow diagrams, the domain-driven library tree, and the Nx layer/framework tag tables: **[docs/state-flow.md](docs/state-flow.md)**
+### Domain-Driven Library Structure
+
+The workspace is split into framework-specific libs under a shared domain root. Module boundary rules (Nx ESLint `@nx/enforce-module-boundaries`) are enforced via `type:` tags (layer direction) and `framework:` tags (no cross-framework imports).
+
+```text
+apps/
+  portal-shell           → Vanilla JS landing page (no build step)
+  users-portal-angular   → Angular app shell + MFE host (/hybrid route)
+  users-portal-react     → React app shell + MFE remote (exposes mount())
+
+libs/
+  users/                 → @portal/users/utils — shared by both apps
+                           Pure TS: domain models, pure utils, canonical mock data
+
+  users-angular/
+    data-access          → NgRx store, effects, services, facade
+    feature              → Angular smart container
+    ui                   → Angular presentational components
+
+  users-react/
+    data-access          → TanStack Query API fns, Zustand store, useOrdersStream
+    feature              → useUsersFacade hook
+    ui                   → React presentational components (incl. virtual scroll)
+```
+
+**Layer Rules (both apps)**
+
+| `type:` tag | Can depend on |
+| :--- | :--- |
+| `app` | `feature`, `data-access` |
+| `feature` | `ui`, `data-access`, `utils` |
+| `data-access` | `utils` |
+| `ui` | `utils` |
+| `utils` | `utils` |
+
+**Framework Isolation Rules**
+
+| `framework:` tag | Projects |
+| :--- | :--- |
+| `framework:angular` | `users-portal-angular`, `users-angular/data-access`, `users-angular/feature`, `users-angular/ui` |
+| `framework:react` | `users-portal-react`, `users-react/data-access`, `users-react/feature`, `users-react/ui` |
+| `framework:shared` | `users/utils` |
+
+Angular and React libs must never import from each other. Only `framework:shared` libs may be imported by both.
+
+→ Per-framework facade implementations and both state-flow diagrams (Angular/React): **[docs/state-flow.md](docs/state-flow.md)**
 
 ## 💻 Local Development
 
@@ -188,5 +235,5 @@ This project demonstrates:
 ## 📖 Deep Dives
 
 - **[docs/mfe-architecture.md](docs/mfe-architecture.md)** — full `mount()` API, Platform SDK internals, module-federation gotchas
-- **[docs/state-flow.md](docs/state-flow.md)** — per-framework facade code, both state-flow diagrams, library structure, Nx tag tables
+- **[docs/state-flow.md](docs/state-flow.md)** — per-framework facade code, both state-flow diagrams (Angular/React)
 - **[docs/agentic-workflow.md](docs/agentic-workflow.md)** — slash command examples, the autonomous agent's tool loop, generator internals, PR review agent design
