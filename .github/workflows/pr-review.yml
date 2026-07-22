@@ -1,0 +1,49 @@
+name: PR Architecture Review
+
+on:
+  pull_request:
+    branches: [main]
+
+# Required check — this job FAILS when real architecture drift is found.
+# Add "Architecture review" as a required status check in the main branch
+# protection rule for this to actually block merging; without that rule this
+# still just reports red/green on the PR without stopping anyone from merging.
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  architecture-review:
+    name: Architecture review
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need the base branch to diff against
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Fetch base branch
+        run: git fetch --no-tags origin ${{ github.base_ref }}
+
+      - name: Generate architecture review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: node tools/pr-review-agent.mjs --base origin/${{ github.base_ref }} | tee review.md
+
+      - name: Post review comment
+        if: always() # post the comment whether the review passed or failed
+        continue-on-error: true # a comment-posting hiccup shouldn't mask the real verdict above
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -s review.md ]; then
+            gh pr comment "${{ github.event.pull_request.number }}" --body-file review.md
+          else
+            echo "No review output — skipping comment."
+          fi
