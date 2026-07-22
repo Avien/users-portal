@@ -147,6 +147,9 @@ libs/
   users/                 → @portal/users/utils — shared by both apps
                            Pure TS: domain models, pure utils, canonical mock data
 
+  platform/              → @portal/platform — shared by both apps
+                           MFE contract: MountMfe/MfeMountOptions, PlatformSDK, typed EventBus
+
   users-angular/
     data-access          → NgRx store, effects, services, facade
     feature              → Angular smart container
@@ -174,7 +177,7 @@ libs/
 | :--- | :--- |
 | `framework:angular` | `users-portal-angular`, `users-angular/data-access`, `users-angular/feature`, `users-angular/ui` |
 | `framework:react` | `users-portal-react`, `users-react/data-access`, `users-react/feature`, `users-react/ui` |
-| `framework:shared` | `users/utils` |
+| `framework:shared` | `users/utils`, `platform` |
 
 Angular and React libs must never import from each other. Only `framework:shared` libs may be imported by both.
 
