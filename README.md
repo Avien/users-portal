@@ -27,7 +27,7 @@ This repository explores how the same frontend domain can evolve across:
 
 ## 📦 Project Overview
 
-This Nx monorepo contains Angular, React, and Hybrid Microfrontend implementations of the same domain — a users-and-orders dashboard with real-time WebSocket updates.
+This Nx monorepo contains Angular, React, and Hybrid Microfrontend implementations of the same domain — a users-and-orders dashboard with real-time WebSocket updates, deployed as independent Vercel projects that compose at runtime via Module Federation 2.0.
 
 | App | Stack | Purpose |
 | :--- | :--- | :--- |
@@ -35,478 +35,131 @@ This Nx monorepo contains Angular, React, and Hybrid Microfrontend implementatio
 | `apps/users-portal-angular` | Angular 19, NgRx, Signals, OnPush | Reference implementation + Hybrid MFE host |
 | `apps/users-portal-react` | React 19, TanStack Query, Zustand, Vite | Idiomatic React rebuild + MFE remote |
 
-The three apps are deployed as independent Vercel projects and compose at runtime via Module Federation 2.0.
+The UI lists users and their orders. Selecting a user loads orders lazily with per-user caching; a WebSocket stream pushes live updates merged into the cache without overwriting lazily loaded data; high-value and burst orders trigger auto-dismissing toast notifications.
 
-The UI displays a list of users and their associated orders. Selecting a user loads orders lazily with per-user caching. A WebSocket stream pushes live order updates that are merged into the cache without overwriting lazily loaded data. High-value and burst orders trigger toast notifications with auto-dismiss.
+## ⚖️ Architecture at a Glance
 
-The project demonstrates how the same domain and architectural patterns (facade, layered libs, module boundaries, reactive state) map across two fundamentally different frontend paradigms.
+Same domain, same facade contract (`UserOrdersVm & IUsersFacadeInteractions`), idiomatic internals per framework:
 
-## 🏗 Architectural Highlights (Angular App)
-
-* **Nx Monorepo:** Organized with strict boundaries between the App Shell (`users-portal`) and the domain libraries (`feature`, `ui`, `data-access`, `utils`), with architectural constraints enforced through Nx ESLint module boundary rules.
-* **Utils Library:** Hosts pure business logic utilities that are framework-agnostic, reusable, and independently unit tested, promoting clean separation between domain logic and framework-specific code.
-* **State Management (NgRx):** Powered by NgRx, utilizing **NgRx Entity** for normalized state storage and highly efficient CRUD operations.
-* **Real-time Order Ingestion:** WebSocket events are consumed through Effects and merged into store state without losing lazily loaded API data.
-* **Modern Angular (v21):** Built on the absolute bleeding edge of the framework, utilizing:
-  * Strict Standalone Components
-  * The latest control flow syntax (`@if`, `@for`)
-  * Angular Signals
-  * Purely Zoneless testing environments (`setupZonelessTestEnv`)
-* **Signals + Selectors Integration:** NgRx selectors are seamlessly converted into Angular Signals using `store.selectSignal`, bridging the gap between global state and local reactivity.
-* **Performance & Smart Caching:** The Facade uses per-user loaded flags (`loadedUserIds`) instead of order-list length, preventing false cache hits when partial WebSocket data arrives before first API load.
-
-## 🏗 Architectural Highlights (React App)
-
-* **Server State vs UI State separation:** TanStack Query owns all server state (users list, per-user orders cache). Zustand owns UI state (`selectedUserId`, `notifications`). The two never overlap.
-* **`staleTime: Infinity` on orders:** The WebSocket stream is the sole freshness mechanism — no background refetching that could overwrite live data. Orders accumulate via cache updates, not re-fetches.
-* **WebSocket as an explicit singleton:** Unlike Angular's NgRx Effects (automatically singleton), React requires intentional placement. `useOrdersStream()` lives in `App`, not in any per-user component, mirroring the Effect lifecycle.
-* **Pending buffer pattern:** WS orders for users whose API data hasn't loaded yet are buffered in a module-level Map (`pendingByUser`). The facade drains and merges the buffer via a `useEffect` once `ordersQuery.isSuccess` fires — no race condition, no lost events.
-* **Facade hook as the NgRx equivalent:** `useUsersFacade()` composes TanStack Query + Zustand and returns a plain object matching `UserOrdersVm & IUsersFacadeInteractions`. Components are unaware of either library.
-* **`React.memo` + `useMemo` as OnPush + Selectors:** Presentational components wrapped in `React.memo` only re-render when props change. All derived values (selected user, order summary) are memoised in the facade — equivalent to NgRx memoised selectors.
-* **Virtual scroll:** The orders list uses `@tanstack/react-virtual` (headless, same ecosystem as TanStack Query) for fixed-size row virtualisation — the React equivalent of Angular CDK `cdk-virtual-scroll-viewport`.
-* **Notifications via Zustand actions + module-level timers:** `addNotification` / `dismissNotification` with a module-level `dismissTimers` Map replaces Angular's `OrderNotificationsService` class — no extra service abstraction needed since the Zustand store IS the singleton.
-
----
+| Concern | Angular | React |
+| :--- | :--- | :--- |
+| Server/domain state | NgRx + NgRx Entity (normalized, effects) | TanStack Query (`staleTime: Infinity` — WS is the sole freshness signal) |
+| UI-only state | NgRx (selection, notifications) | Zustand |
+| Reactivity model | Signals, `store.selectSignal` → `$vm` | `useMemo` in the facade → plain VM object |
+| Facade | `UsersFacade`, root-scoped DI (`providedIn: 'root'`) | `useUsersFacade()` hook, component-scoped |
+| Real-time WS singleton | NgRx Effect (framework-guaranteed singleton) | `useOrdersStream()` mounted once in `App` + pending-buffer for not-yet-loaded users |
+| Render perf | `OnPush` + Signals | `React.memo` + memoised facade values |
+| Virtual scroll | CDK `cdk-virtual-scroll-viewport` | `@tanstack/react-virtual` |
+| Notifications | `OrderNotificationsService` + NgRx | Zustand actions + module-level dismiss timers |
 
 ## 🔀 Hybrid Microfrontend Architecture
 
 The Hybrid mode runs React inside Angular using **Module Federation 2.0** — no iframes, no build-time coupling, independent deployments.
 
-### How it fits together
-
 ```
 portal-shell (vanilla JS)
-  ├── → /users  →  users-portal-angular (Full Angular)
-  ├── → /users  →  users-portal-react   (Full React)
-  └── → /hybrid →  users-portal-angular (host)
-                       └── /hybrid route → ReactWrapperComponent
-                                              └── loadRemote('react-users/mount')
-                                                    └── users-portal-react (remote)
-                                                          mount(container, { initialPath: '/users', platform })
+  └── /hybrid → users-portal-angular (host)
+                   └── loadRemote('react-users/mount')
+                         └── users-portal-react (remote)
+                               mount(container, { initialPath, platform })
 ```
 
-### Packages
+- React exposes one framework-agnostic `mount()` function, typed by the shared `MountMfe` contract — owns its own root, router, and query client, returns an `unmount()`
+- Angular host (`ReactWrapperComponent`) has **zero React imports** — resolves the remote at runtime via `loadRemote`
+- The host injects a shared **`@portal/platform`** SDK (`{ events: EventBus }`) at the mount seam — a typed, cross-MFE capability contract assembled once by a root `PlatformService` singleton, not re-created per mount
+- `type: 'module'` federation + a dev-mode Fast Refresh preamble keep the remote working in both prod and local dev
 
-| Package | Role |
+→ Full `mount()` walkthrough, Platform SDK internals, and the module-federation gotchas: **[docs/mfe-architecture.md](docs/mfe-architecture.md)**
+
+## 🤖 Agentic AI Development
+
+The Angular app was built with ChatGPT + Cursor; the React app was rebuilt with **Claude Code**, using this repo's own `CLAUDE.md` as the architectural source of truth. That same source of truth is then encoded into the tooling itself:
+
+| Layer | What it does |
 | :--- | :--- |
-| `@module-federation/vite` | Vite plugin — builds React app as ES module remote, generates `remoteEntry.js` |
-| `@module-federation/runtime` | Browser runtime — loaded in Angular, resolves and imports the remote |
+| **Slash commands** (`.claude/commands/`) | `/new-component`, `/sync-contract`, `/architecture-check` — say what you want in plain language, Claude routes to the right one |
+| **Nx generator** (`feature-domain`) | `npm run g:feature-domain -- <name>` scaffolds a full dual-framework feature domain (35 files, both facades, path aliases) in one command |
+| **Autonomous agent** (`tools/agent.mjs`) | A hand-rolled Claude API tool-use loop — describe a goal, it scaffolds + edits + validates across both frameworks unattended |
+| **PR review agent** (`tools/pr-review-agent.mjs`) | GitHub Actions bot — reviews every PR diff for architecture drift against `CLAUDE.md`, posts an advisory comment (`continue-on-error`, never blocks) |
 
-### React remote — `mount()` API
+> "The tech lead's job is to make AI follow the architecture, not invent a new one every time."
 
-The React app exposes a single framework-agnostic function via `src/mount.tsx`, typed by the shared `MountMfe` contract:
-
-```ts
-export const mount: MountMfe = (
-  container: HTMLElement,
-  { initialPath, platform }: MfeMountOptions
-) => { /* … */ return unmount; };
-```
-
-- **Owns everything**: `ReactDOM.createRoot`, `QueryClientProvider`, `MemoryRouter`, and a `PlatformProvider` that exposes the injected SDK via `usePlatform()`
-- **Returns an unmount function** — Angular calls it in `ngOnDestroy`
-- **Module-scope `QueryClient` singleton** — survives Angular mount/unmount cycles without resetting cache
-- **Receives `initialPath` + an injected `platform`** (a `PlatformSDK`), not domain props — React handles its own navigation and reads shared capabilities through the SDK (see [Platform SDK](#-platform-sdk--capabilities-injected-at-the-seam) below)
-
-### Angular host — framework-agnostic wrapper
-
-`ReactWrapperComponent` has zero React knowledge — no React imports, no ReactDOM. It injects the shell's platform singleton and passes it through the mount contract:
-
-```ts
-private readonly platform = inject(PlatformService);   // shell-owned singleton
-
-async ngAfterViewInit() {
-  const mod = await loadRemote<{ mount: MountMfe }>('react-users/mount');
-  this.unmount = mod!.mount(this.container.nativeElement, {
-    initialPath: '/users',
-    platform: this.platform.sdk,
-  });
-}
-```
-
-`init()` in `main.ts` registers the remote URL at boot but makes no network request. The actual `remoteEntry.js` fetch only happens when the user navigates to `/hybrid`.
-
-### 🧩 Platform SDK — capabilities injected at the seam
-
-The host injects more than a path — it hands the remote a **platform capability object** it depends on *by interface*. The contract lives in a shared, framework-agnostic lib, **`@portal/platform`**:
-
-```ts
-interface PlatformSDK {
-  events: EventBus;   // typed cross-MFE pub/sub — extensible: auth, navigation, flags, …
-}
-```
-
-- **One contract, shared by shape** — `@portal/platform` owns `PlatformSDK`, `MfeMountOptions`, `MountMfe`, and a typed `EventBus`. Host and remote depend on the *shape*, not on each other's code, so the seam stays framework-agnostic (a future Vue MFE would consume the same contract).
-- **Built once at the shell root** — the Angular host's `PlatformService` (`providedIn: 'root'`) assembles the SDK a single time and injects the *same* instance into every MFE. One platform, shared — the same discipline as one WebSocket at the root, not one per route.
-- **Consumed by interface** — the remote reads it through a `usePlatform()` context and never knows whether it was mounted directly (same JS realm) or, in a future sandboxed setup, behind a `postMessage` proxy. Same `PlatformSDK` either way = location transparency.
-- **`EventBus`** — a typed, dependency-free pub/sub for cross-MFE *moments* (`user:selected`, `session:expired`). MFEs emit and subscribe but never import each other; it carries events, not state (state belongs in a store).
-
-### Why `type: 'module'` matters
-
-`@module-federation/vite` generates ES module remotes with **named exports** (`export { get, init }`). The runtime default (`type: 'global'`) loads via a classic `<script>` tag and looks for a `window['react-users']` global — which is never set. `type: 'module'` switches to `import(url)` and reads the named exports directly.
-
-```ts
-// apps/users-portal-angular/src/main.ts
-init({
-  name: 'angular-host',
-  remotes: [{ name: 'react-users', entry: reactRemoteUrl, type: 'module' }],
-});
-```
-
-### Dev mode — React Fast Refresh preamble
-
-In dev mode, `@vitejs/plugin-react` injects a `window.__vite_plugin_react_preamble_installed__` check into every JSX file. Normally injected by Vite's HTML transform — which never runs in the Angular host. `src/federation-dev-preamble.ts` installs stub globals as a **side-effect import at the top of `mount.tsx`**, before any component module evaluates. HMR doesn't work for the remote in this mode — that's expected.
-
----
+→ Full breakdown — slash command examples, the agent's tool loop, generator internals, PR review agent design: **[docs/agentic-workflow.md](docs/agentic-workflow.md)**
 
 ## 🔔 Order Monitoring Notifications
 
-The dashboard includes a real-time monitoring layer that turns streamed order activity into actionable UI toasts.
+- **Warning** — a newly streamed order crosses the high-value threshold (`>= $500`)
+- **Critical** — the same user receives multiple new streamed orders within a 2-minute burst window
+- **Noise control** — bulk API hydration is ignored to avoid toast spam; only streamed events trigger toasts
+- Pure detection logic (`reduceOrderMonitoring`) lives in the shared `@portal/users/utils` lib — both facades run the same rule, wire it to their own state layer (NgRx effect vs Zustand action)
 
-### What triggers a notification
-
-- **Warning:** a newly streamed order crosses the high-value threshold (`>= $500`)
-- **Critical:** the same user receives multiple new streamed orders within a short burst window (2 minutes by default)
-- **Noise control:** bulk order inserts (for example, lazy API hydration) are intentionally ignored to avoid toast spam
-
-### Architecture split
-
-- **Pure monitoring rules (`libs/users` → `@portal/users/utils`)**  
-  `reduceOrderMonitoring()` and related helpers evaluate incoming order snapshots and return lightweight toast payloads. Shared by both apps.
-- **Angular — Facade orchestration (`libs/users-angular/data-access`)**  
-  `UsersFacade` runs the monitoring NgRx effect, owns the notifications signal on `$vm`, and keeps store interaction centralized. `OrderNotificationsService` handles ids, timestamps, auto-dismiss timers, and cleanup.
-- **React — Zustand store + `useOrdersStream` (`libs/users-react/data-access`)**  
-  `addNotification` / `dismissNotification` actions with module-level `dismissTimers` replace the Angular service. `useOrdersStream` (called once from `App`) runs `reduceOrderMonitoring` on each WS tick and dispatches to the store.
-- **Feature/UI rendering (both apps)**  
-  Toasts are rendered via `toast-stack` from `vm.notifications`.
-
-d### Try it
-
-**Locally:**
+**Try it locally:**
 ```bash
-npm run mock:ws
-npm start
+npm run mock:ws && npm start
 ```
+On connect, the mock server immediately emits two orders for the same user (~0.5s/~1.5s in) to trigger the critical burst toast without waiting for the random stream. In production the same server runs persistently on Railway; Angular and React each read its URL from their own environment config.
 
-**Production (live demos):** The WS server runs on [Railway](https://railway.app) as a persistent Node.js process. Angular reads the URL from `environment.prod.ts`; React reads `VITE_ORDERS_WS_URL` from the Vercel environment.
+## 🧠 Design Patterns — Reactive Facade
 
-On connect, the server immediately emits two orders for the same user (~0.5 s and ~1.5 s after connection) to trigger the **critical burst toast** as soon as the app loads. Subsequent orders arrive every 5–15 s at random.
-
----
-
-## 🧠 Design Patterns
-
-### Reactive Facade Pattern
-
-#### The core idea: separating Business Logic from Presentation Logic
-
-The Facade pattern draws a hard boundary between two distinct concerns:
-
-- **Business Logic (BL)** — where does data come from? How is it fetched, cached, derived, and mutated? What rules govern state transitions? (NgRx store + effects + selectors in Angular; TanStack Query + Zustand + `useMemo` in React)
-- **Presentation Logic (PL)** — how is data displayed? What does the user see and interact with? (Angular components reading `$vm`; React components receiving props)
-
-The facade sits at that boundary. It owns all BL and publishes a single, clean ViewModel to the UI. Components on the other side are **purely presentational** — they receive data and emit events, with no knowledge of how state is managed underneath.
-
-#### Smart vs Dumb components
-
-This boundary creates two distinct component types:
-
-**Smart component** (one per feature) — calls the facade, owns the layout, passes data down:
-- Angular: `UserOrdersComponent` — reads `$vm` signal, renders child components
-- React: `UserOrders` component — calls `useUsersFacade()`, renders child components
-- Has no business logic, but is aware of the facade's existence
-
-**Dumb (presentational) components** — props in, events out, nothing else:
-- `UserButtons`, `OrdersCard`, `UserName`, `UserTotalOrders`, `ToastStack`
-- Zero knowledge of NgRx, TanStack Query, Zustand, or routing
-- Identical contract in both frameworks: typed props → rendered JSX/template
-- Wrapped in `React.memo` (React) / `OnPush` (Angular) — re-render only when props change
+The facade draws a hard line between **Business Logic** (fetch/cache/derive/mutate — NgRx+Effects in Angular, TanStack Query+Zustand in React) and **Presentation Logic** (Angular components reading `$vm`; React components receiving props). Everything on the presentation side is purely props-in/events-out.
 
 ```
-                   ┌─────────────────────────────┐
-                   │         FACADE               │
-                   │  (Business Logic boundary)   │
-  NgRx / TanStack ─┤  - fetches & caches data     ├─► ViewModel (UserOrdersVm)
-  Zustand / RxJS   │  - derives & memoises        │
-  Router / URL     │  - handles interactions      ├─► Interactions (selectUser, dismiss)
-                   └─────────────────────────────┘
-                                  │
-                    ┌─────────────▼────────────┐
-                    │      Smart Component      │
-                    │  (reads VM, owns layout)  │
-                    └─────────────┬────────────┘
-                                  │ props + callbacks
-                    ┌─────────────▼────────────┐
-                    │   Dumb Components (many)  │
-                    │  props in → renders out   │
-                    │  OnPush / React.memo      │
-                    └──────────────────────────┘
+   FACADE (Business Logic)  →  ViewModel + Interactions
+          │
+   Smart Component (reads VM, owns layout, aware facade exists)
+          │ props + callbacks
+   Dumb Components (many) — props in → renders out, OnPush / React.memo
 ```
-
-#### Why this matters
 
 | Without facade | With facade |
 | :--- | :--- |
 | Components import NgRx actions / Zustand stores directly | Components import nothing — only props |
-| Swapping state libraries requires touching every component | Swap the facade internals, components unchanged |
-| Testing components requires mocking the entire state tree | Test components with plain prop objects |
-| Business rules scattered across templates and components | BL in one place, independently testable |
-| Smart/dumb boundary unclear — any component can reach into state | Enforced by API: dumb components literally cannot access state |
+| Swapping state libraries touches every component | Swap facade internals, components unchanged |
+| Testing requires mocking the whole state tree | Test with plain prop objects |
+| Business rules scattered across templates | BL lives in one place, independently testable |
 
-#### Framework implementations
-
-**Angular — `UsersFacade` (class, root-scoped DI)**
-
-Exposed as a single Angular Signal `$vm` — the component reads one object and re-renders when it changes. Route lifecycle (loading users, selecting from URL) is delegated to `selectUserResolver` and `autoSelectUserGuard` — the component has no `ngOnInit` at all.
-
-* UI components only read `$vm` — no actions, no selectors, no subscriptions
-* Route guards and resolvers drive initialization, not the component
-* Facade is globally singleton via `providedIn: 'root'`
-
-**React — `useUsersFacade()` (hook, component-scoped)**
-
-Same role, idiomatic React form: composes TanStack Query + Zustand and returns `UserOrdersVm & IUsersFacadeInteractions` as a plain object. Components are unaware of either library. Because hooks are naturally component-scoped, the React facade doesn't need DI — it IS the DI boundary.
-
-* URL (`useParams`) is the source of truth for `selectedUserId` — no Zustand for selection
-* `useNavigate` is the write path for `selectUser` — navigation IS the state update
-* `useMemo` inside the facade replaces NgRx memoised selectors
-* `React.memo` on UI components replaces `OnPush`
-
-**Shared contract**
-
-Both facades return the same shape, enforced by `@portal/users/utils`:
-```ts
-UserOrdersVm & IUsersFacadeInteractions
-// selectUser(id), dismissOrderNotification(id) — identical public surface
-```
-
-Swapping the entire state management stack (Angular NgRx ↔ React TanStack+Zustand) had zero impact on the presentational components — they consume the same contract either way.
-
----
-
-### ⚡ State Flow — Angular
-
-```text
-User Interaction
-  ↓
-Feature Component (pure view)
-  ↓
-UsersFacade.selectUser()
-  ↓
-Router.navigate(['/users', id])          ← selectUserResolver fires
-  ↓
-NgRx Actions (selectUser, loadUserOrders)
-  ↓
-Effects (API calls + WS stream mapping)
-  ↓
-Reducers (state updates)
-  ↓
-Selectors (memoised derivations)
-  ↓
-Angular Signals ($vm)
-  ↓
-UI Rendering
-```
-
-WebSocket path:
-```text
-WS event (OrdersService / RxJS webSocket)
-  ↓
-NgRx Effect → mergeOrderIntoCache action
-  ↓
-Reducer → per-user orders updated
-  ↓
-reduceOrderMonitoring (shared pure util)
-  ↓
-NgRx Effect → addNotification action
-  ↓
-$vm.notifications signal → ToastStack
-```
-
----
-
-### ⚡ State Flow — React
-
-```text
-User Interaction
-  ↓
-UI Component (React.memo — props only)
-  ↓
-selectUser() callback
-  ↓
-useNavigate() → URL update (/users/:id)
-  ↓
-useParams() re-reads selectedUserId
-  ↓
-useQuery (TanStack) fetches orders for id
-  ↓
-useMemo (facade) derives UserOrdersVm
-  ↓
-UI Rendering
-```
-
-WebSocket path (singleton, runs in App):
-```text
-useOrdersStream() — mounted once in <App>
-  ↓
-WebSocket message
-  ↓
-queryClient.setQueryData → per-user cache updated
-  ↓ (if user not yet visited → pendingByUser buffer)
-reduceOrderMonitoring (shared pure util)
-  ↓
-Zustand addNotification
-  ↓
-useUsersFacade reads notifications from store
-  ↓
-vm.notifications → ToastStack
-```
-
-### Domain-Driven Library Structure
-
-The workspace is split into framework-specific libs under a shared domain root. Module boundary rules (Nx ESLint `@nx/enforce-module-boundaries`) are enforced via `type:` tags (layer direction) and `framework:` tags (no cross-framework imports).
-
-```text
-apps/
-  portal-shell           → Vanilla JS landing page (no build step)
-  users-portal-angular   → Angular app shell + MFE host (/hybrid route)
-  users-portal-react     → React app shell + MFE remote (exposes mount())
-
-libs/
-  users/                 → @portal/users/utils — shared by both apps
-                           Pure TS: domain models, pure utils, canonical mock data
-
-  users-angular/
-    data-access          → NgRx store, effects, services, facade
-    feature              → Angular smart container
-    ui                   → Angular presentational components
-
-  users-react/
-    data-access          → TanStack Query API fns, Zustand store, useOrdersStream
-    feature              → useUsersFacade hook
-    ui                   → React presentational components (incl. virtual scroll)
-```
-
-#### Layer Rules (both apps)
-
-| `type:` tag | Can depend on |
-| :--- | :--- |
-| `app` | `feature`, `data-access` |
-| `feature` | `ui`, `data-access`, `utils` |
-| `data-access` | `utils` |
-| `ui` | `utils` |
-| `utils` | `utils` |
-
-#### Framework Isolation Rules
-
-| `framework:` tag | Projects |
-| :--- | :--- |
-| `framework:angular` | `users-portal-angular`, `users-angular/data-access`, `users-angular/feature`, `users-angular/ui` |
-| `framework:react` | `users-portal-react`, `users-react/data-access`, `users-react/feature`, `users-react/ui` |
-| `framework:shared` | `users/utils` |
-
-Angular and React libs must never import from each other. Only `framework:shared` libs may be imported by both.
-
----
+→ Per-framework facade implementations, both state-flow diagrams, the domain-driven library tree, and the Nx layer/framework tag tables: **[docs/state-flow.md](docs/state-flow.md)**
 
 ## 💻 Local Development
 
 ```bash
-# Install all dependencies
 npm install
-```
 
-**Angular app** — `http://localhost:4200`
-```bash
-npm run validate:angular   # lint + test Angular projects
-npm run mock:ws            # start WS mock server at ws://localhost:3000/orders (optional)
-npm run start:angular      # serve Angular app
-```
+# Angular — http://localhost:4200
+npm run validate:angular && npm run mock:ws && npm run start:angular
 
-**React app** — `http://localhost:4201`
-```bash
-npm run validate:react     # lint + test React projects
-npm run mock:ws            # same WS server works for both apps
-npm run start:react        # serve React app
-```
+# React — http://localhost:4201
+npm run validate:react && npm run mock:ws && npm run start:react
 
-**Shell** — `http://localhost:4000`
-```bash
-npm run start:shell        # serve vanilla JS shell (no build needed)
-```
-
-**Hybrid MFE mode** (all three servers required)
-```bash
-# Terminal 1 — React remote (must be running for hybrid to work)
-npm run start:react
-
-# Terminal 2 — Angular host
-npm run start:angular
-
-# Terminal 3 — Shell landing page (optional)
+# Shell — http://localhost:4000 (no build step)
 npm run start:shell
 ```
 
-Then open `http://localhost:4200/hybrid` directly, or use the shell at `http://localhost:4000` and click **Hybrid**.
+**Hybrid MFE mode** needs all three running (React remote first): `start:react` → `start:angular` → `start:shell` (optional), then open `http://localhost:4200/hybrid` or use the shell's **Hybrid** button. The React dev server must be on port 4201 — Angular's `main.ts` resolves the remote at `http://localhost:4201/remoteEntry.js` in development.
 
-> The React dev server must be on port 4201. Angular's `main.ts` resolves the remote URL as `http://localhost:4201/remoteEntry.js` in development.
-
-**All projects**
 ```bash
-npm run validate           # lint + test everything
+npm run validate   # lint + test everything, all frameworks
 ```
-
----
 
 ## 🛠 Available Commands
 
 | Command | Scope | Description |
 | :--- | :--- | :--- |
-| `npm run start:angular` | Angular | Serve Angular app at `http://localhost:4200` |
-| `npm run start:react` | React | Serve React app at `http://localhost:4201` |
-| `npm run start:shell` | Shell | Serve vanilla JS shell at `http://localhost:4000` |
-| `npm run mock:ws` | Both | Start WS mock server at `ws://localhost:3000/orders` |
-| `npm run format` | Both | Run Prettier across the workspace |
-| `npm run lint` | Both | ESLint across the entire monorepo |
-| `npm run test` | Both | Run all test suites (Jest + Vitest) |
-| `npm run validate` | Both | Lint + test everything |
-| `npm run validate:angular` | Angular | Lint + test Angular projects + shared lib |
-| `npm run validate:react` | React | Lint + test React projects + shared lib |
-| `npm run build:prod` | Angular | Validate + production build → `dist/apps/users-portal-angular` |
-| `npm run build:angular` | Angular | Same as `build:prod` |
-| `npm run build:react` | React | Validate + production build → `dist/users-portal-react` |
-
----
+| `npm run start:angular` / `start:react` / `start:shell` | — | Serve each app (`:4200` / `:4201` / `:4000`) |
+| `npm run mock:ws` | Both | WS mock server at `ws://localhost:3000/orders` |
+| `npm run validate` | All | Lint + test everything |
+| `npm run validate:angular` / `validate:react` | Angular / React | Lint + test that framework + shared lib |
+| `npm run build:angular` / `build:react` | Angular / React | Validate + production build |
+| `npm run pr-review -- --base origin/main` | All | Run the architecture-drift PR reviewer locally |
+| `npm run agent -- "<goal>"` | All | Run the autonomous feature-domain agent |
+| `npm run g:feature-domain -- <name>` | All | Scaffold a new dual-framework feature domain |
 
 ## 🧪 Testing
 
-Libraries are tested independently to ensure isolated domain logic.
-
-**Angular** — uses **Jest** with zoneless Angular test environment:
-```typescript
-import { setupZonelessTestEnv } from 'jest-preset-angular/setup-env/zoneless';
-setupZonelessTestEnv({ errorOnUnknownElements: true, errorOnUnknownProperties: true });
-```
-
-**React** — uses **Vitest** with `@testing-library/react`:
-- `environment: jsdom` (configured per-lib in `vite.config.ts`)
-- Always set `gcTime: 0` in test `QueryClient` instances to prevent TanStack Query GC timers from keeping the test runner alive
-- Use `vi.useFakeTimers()` in specs that trigger Zustand `addNotification` (auto-dismiss timers)
-
-**Shared utils** — tested with **Jest** (framework-agnostic pure TS).
-
----
-
-## 📝 Notes
-
-- Both apps use **mock data** served by `tools/mock-orders-ws-server.mjs` and in-memory API stubs. No real backend required.
-- **Locally:** run `npm run mock:ws` before starting either app to see live order streaming. **In production:** the same server runs on Railway; Angular + React both point to the Railway URL via their respective environment configs.
-- On each new connection the server sends a burst of two orders within ~1 s to immediately trigger the critical burst toast and a high-value warning toast — no need to wait for the random stream to produce these conditions organically.
-- **Angular** — `UsersFacade` abstracts all NgRx interactions (actions, selectors, effects) from the UI. Components only see Angular Signals from `$vm`.
-- **React** — `useUsersFacade()` plays the same role: it composes TanStack Query + Zustand and returns `UserOrdersVm & IUsersFacadeInteractions`. Components only see plain props.
-- Both facades share the same `UserOrdersVm` / `IUsersFacadeInteractions` contracts from `@portal/users/utils`, enforcing a consistent public surface across frameworks.
-- The orders list in the React app uses `@tanstack/react-virtual` for virtualized rendering (equivalent to Angular CDK `cdk-virtual-scroll-viewport`).
-
+- **Angular** — Jest, zoneless test environment (`setupZonelessTestEnv`)
+- **React** — Vitest + `@testing-library/react`, `jsdom`; always set `gcTime: 0` on test `QueryClient`s and use `vi.useFakeTimers()` around notification auto-dismiss
+- **Shared utils** — Jest, framework-agnostic pure TS
+- No real backend required — both apps run on mock data (`tools/mock-orders-ws-server.mjs` + in-memory API stubs)
 
 ## 📌 Summary
 
@@ -514,106 +167,13 @@ This project demonstrates:
 * Scalable **Nx monorepo** with two parallel framework implementations + a framework-agnostic shell
 * **Shared domain contracts** (`@portal/users/utils`) consumed by both Angular and React
 * **Module boundary enforcement** via Nx ESLint `type:` + `framework:` tags
-* **Angular** — NgRx Entity + Selectors, Angular Signals, OnPush, CDK Virtual Scroll
-* **React** — TanStack Query, Zustand, `@tanstack/react-virtual`, `React.memo`
-* **Facade pattern** in both frameworks: same public surface (`UserOrdersVm`), idiomatic internals
+* **Facade pattern** in both frameworks — same public surface, idiomatic internals
 * **WebSocket stream** with pending-buffer pattern and real-time order monitoring (shared pure logic)
-* **Hybrid MFE** — Module Federation 2.0, Angular host loads React remote at runtime, framework-agnostic `mount()` API
-* **Platform SDK** — shared `@portal/platform` contract injected at mount (host↔remote by interface), assembled once by a root `PlatformService`, with a typed cross-MFE `EventBus`
-* **Scoped CI scripts** — `validate:angular` / `validate:react` / `build:angular` / `build:react`
+* **Hybrid MFE** — Module Federation 2.0, framework-agnostic `mount()` API, injected Platform SDK + cross-MFE `EventBus`
+* **Agentic AI workflow** — slash commands, an Nx generator, an autonomous Claude API agent, and a PR review bot, all sharing one `CLAUDE.md` as the architectural source of truth
 
+## 📖 Deep Dives
 
-## 🤖 Agentic AI Development
-
-This project was built across two phases, each with a different AI pairing:
-
-**Angular app** (`apps/users-portal-angular`) — built with **ChatGPT + Cursor**
-- Architecture was designed upfront by translating product requirements into a clear structural model (Nx boundaries, NgRx patterns, facade contract)
-- AI generated the initial implementation baseline aligned to that architecture
-- Refined iteratively through engineering-led review, testing, and targeted improvements
-- Final design decisions, trade-offs, and code quality were owned and validated manually
-
-**React app** (`apps/users-portal-react`) — rebuilt with **Claude Code** (this repo)
-- The Angular app serves as the architectural reference; the goal is an idiomatic React rebuild — not a direct translation
-- Claude Code was used as a pair-programmer throughout: implementing features, explaining Angular→React mental model shifts, writing tests, and catching architectural drift
-- All decisions (patterns, naming, boundaries) were reviewed and approved incrementally
-- Serves as a learning exercise in how the same domain maps across two very different frontend paradigms
-
-### Claude Code Slash Commands
-
-The architecture is encoded into reusable Claude Code commands (`.claude/commands/`). These make AI follow the project's conventions automatically rather than reinventing them each time.
-
-You don't need to know which command to run — just describe what you want in plain language and Claude reads `CLAUDE.md` to route you to the right tool:
-
-| You say | Claude runs |
-| :--- | :--- |
-| "add a status badge component to the orders card" | `/new-component` |
-| "add a priority field to the Order type" | `/sync-contract` |
-| "create a full products domain" | `npm run g:feature-domain -- products` |
-| "check for architecture drift before I PR this" | `/architecture-check` |
-
-| Command | Usage | What it does |
-| :--- | :--- | :--- |
-| `/new-component` | `/new-component <name> <angular\|react>` | Scaffolds a presentational component in the correct lib with all conventions applied (React.memo / OnPush, input signals, layer rules) |
-| `/sync-contract` | `/sync-contract <description>` | Adds a shared type or method to `@portal/users/utils` and propagates it to both the Angular and React facades, then runs both validates |
-| `/architecture-check` | `/architecture-check` | Audits the React codebase for layer boundary violations, cross-framework imports, Zustand scope, JSX logic leaks, and naming convention drift |
-
-> "The tech lead's job is to make AI follow the architecture, not invent a new one every time."
-
-### Autonomous Agent — `tools/agent.mjs`
-
-Where the slash commands above run inside Claude Code, this is a standalone agent built directly on the **Claude API** — a hand-rolled tool-use loop, not a wrapper around an existing tool. Describe a goal in plain language and it scaffolds and wires up a whole new feature domain end to end, without step-by-step human prompting.
-
-```bash
-# autonomous — runs the full trajectory unattended
-ANTHROPIC_API_KEY=sk-... npm run agent -- "create a products domain with name, price, category and a selectProduct interaction" --yes
-
-# interactive — prompts for approval before each mutating step (drop --yes)
-ANTHROPIC_API_KEY=sk-... npm run agent -- "create a products domain with name and price"
-```
-
-**How it works** — the same `CLAUDE.md` that governs Claude Code in this repo is loaded *verbatim* as the agent's system prompt, with a thin operating layer on top. The agent then reasons over that and drives the loop itself: `model → tool → result → model`, until the domain is scaffolded, wired in both frameworks, and validation passes.
-
-| Tool | What the agent does with it |
-| :--- | :--- |
-| `scaffold_domain` | Runs the `feature-domain` generator to create all four libs + path aliases |
-| `list_files` / `read_file` | Inspects what the generator produced before editing |
-| `write_file` / `edit_file` | Fills in the model interface, mock data, and interaction methods in **both** facades |
-| `run_validation` | Runs `validate:angular` / `validate:react` and fixes anything that fails before finishing |
-
-Built on `claude-opus-4-8` with adaptive thinking; file operations are confined to the repo root, and mutating tools require confirmation unless `--yes` is passed. The point isn't to replace Claude Code — it's to show the tool-use loop from the inside: schema design, the agentic loop, approval gating, and using the project's own architecture as the agent's knowledge base.
-
-> "The tech lead's job is to make AI follow the architecture, not invent a new one every time — whether that AI is a pair-programmer or an autonomous loop you built yourself."
-
-### Nx Generator — `feature-domain`
-
-For creating a brand-new feature domain, a custom Nx generator scaffolds the full dual-framework skeleton from a single command.
-
-```bash
-npm run g:feature-domain -- <domain-name>
-```
-
-**Example:**
-```bash
-npm run g:feature-domain -- products
-```
-
-Generates **35 files across 4 libs** and updates `tsconfig.base.json` path aliases automatically:
-
-| Output | Contents |
-| :--- | :--- |
-| `libs/products/` | Shared contract — `Product` model, `IProductsFacadeInteractions`, `ProductsVm`, mock data |
-| `libs/products-angular/data-access/` | NgRx actions, reducer, effects, selectors + `ProductsFacade` (Angular Signals, `inject()`) |
-| `libs/products-react/data-access/` | `fetchProducts()` API fn + Zustand store for UI state |
-| `libs/products-react/feature/` | `useProductsFacade()` hook returning `ProductsVm & IProductsFacadeInteractions` |
-
-After generating, fill in the model interface, replace mock data, add domain-specific interaction methods to `IXxxFacadeInteractions`, then implement them in both facades. Run `validate:angular` and `validate:react` before committing.
-
-The generator enforces architecture at **creation time** — correct Nx tags, layer boundaries, shared contract shape, and framework conventions are baked in before a single line of feature code is written. The slash commands then enforce it during **ongoing development**.
-
-| Tool | When | Enforces |
-| :--- | :--- | :--- |
-| Generator | New domain | Structure, tags, contracts, facades |
-| `/new-component` | New UI component | Layer placement, memo/OnPush, props-only |
-| `/sync-contract` | New shared type or method | Dual-framework propagation, validates |
-| `/architecture-check` | Before PR | Drift detection across all layers |
+- **[docs/mfe-architecture.md](docs/mfe-architecture.md)** — full `mount()` API, Platform SDK internals, module-federation gotchas
+- **[docs/state-flow.md](docs/state-flow.md)** — per-framework facade code, both state-flow diagrams, library structure, Nx tag tables
+- **[docs/agentic-workflow.md](docs/agentic-workflow.md)** — slash command examples, the autonomous agent's tool loop, generator internals, PR review agent design
