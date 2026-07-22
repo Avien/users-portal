@@ -2,19 +2,12 @@
 
 [← Back to README](../README.md)
 
-This project was built across two phases, each with a different AI pairing:
+Most of the implementation in this repository was built with **Claude Code**, while architecture, design, and review were led by me throughout:
 
-**Angular app** (`apps/users-portal-angular`) — built with **ChatGPT + Cursor**
-- Architecture was designed upfront by translating product requirements into a clear structural model (Nx boundaries, NgRx patterns, facade contract)
-- AI generated the initial implementation baseline aligned to that architecture
-- Refined iteratively through engineering-led review, testing, and targeted improvements
-- Final design decisions, trade-offs, and code quality were owned and validated manually
-
-**React app** (`apps/users-portal-react`) — rebuilt with **Claude Code** (this repo)
-- The Angular app serves as the architectural reference; the goal is an idiomatic React rebuild — not a direct translation
-- Claude Code was used as a pair-programmer throughout: implementing features, explaining Angular→React mental model shifts, writing tests, and catching architectural drift
-- All decisions (patterns, naming, boundaries) were reviewed and approved incrementally
-- Serves as a learning exercise in how the same domain maps across two very different frontend paradigms
+- Architecture decisions (Nx boundaries, the facade contract, module federation seams, the platform SDK) were designed and reviewed by me turn-by-turn; Claude Code implemented against those decisions rather than inventing them from scratch
+- `CLAUDE.md` is the source of truth I maintain for both myself and the AI — it's loaded verbatim as the system prompt everywhere: Claude Code sessions, the autonomous agent, and the PR review bot
+- The React rebuild treats the Angular app as an architectural reference, not a template to translate line-by-line — I directed each pattern's (facade, state management, virtualization) idiomatic reinterpretation per framework, with Claude Code explaining the Angular→React mental-model shifts along the way
+- Every decision — patterns, naming, boundaries, trade-offs — was reviewed and approved by me incrementally, with testing and targeted iteration rather than accepting a single large generation
 
 ## Claude Code Slash Commands
 
