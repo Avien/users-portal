@@ -5,6 +5,7 @@ This repository explores how the same frontend domain can evolve across:
 
 - Angular standalone architecture
 - Idiomatic React architecture
+- Idiomatic Vue architecture
 - Shared framework-agnostic domain utilities
 - Cross-framework Microfrontend compositions
 - Agentic AI workflows for cross-framework architectural exploration and implementation
@@ -25,15 +26,20 @@ This repository explores how the same frontend domain can evolve across:
   <img src="https://img.shields.io/badge/-React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB" />
 </a>
 
+<a href="https://users-portal-vue.vercel.app">
+  <img src="https://img.shields.io/badge/-Vue-35495E?style=for-the-badge&logo=vue.js&logoColor=4FC08D" />
+</a>
+
 ## 📦 Project Overview
 
-This Nx monorepo contains Angular, React, and Hybrid Microfrontend implementations of the same domain — a users-and-orders dashboard with real-time WebSocket updates, deployed as independent Vercel projects that compose at runtime via Module Federation 2.0.
+This Nx monorepo contains Angular, React, Vue, and Hybrid Microfrontend implementations of the same domain — a users-and-orders dashboard with real-time WebSocket updates, deployed as independent Vercel projects that compose at runtime via Module Federation 2.0.
 
 | App | Stack | Purpose |
 | :--- | :--- | :--- |
 | `apps/portal-shell` | Vanilla JS, no build step | Landing page — mode selector, redirects to any app |
 | `apps/users-portal-angular` | Angular 21, NgRx, Signals, OnPush | Reference implementation + Hybrid MFE host |
 | `apps/users-portal-react` | React 19, TanStack Query, Zustand, Vite | Idiomatic React rebuild + MFE remote |
+| `apps/users-portal-vue` | Vue 3, Pinia, TanStack Query, Vite | Idiomatic Vue rebuild (standalone) |
 
 The UI lists users and their orders. Selecting a user loads orders lazily with per-user caching; a WebSocket stream pushes live updates merged into the cache without overwriting lazily loaded data; high-value and burst orders trigger auto-dismissing toast notifications.
 

@@ -7,6 +7,9 @@ const urls = {
   react: local
     ? 'http://localhost:4201/users'
     : 'https://users-portal-react.vercel.app/users',
+  vue: local
+    ? 'http://localhost:4202/users'
+    : 'https://users-portal-vue.vercel.app/users',
   hybrid: local
     ? 'http://localhost:4200/hybrid'
     : 'https://users-portal-angular.vercel.app/hybrid',

@@ -66,6 +66,7 @@ h1 {
 
 .card__badge--angular { background: #dd003122; color: #ff6b8a; }
 .card__badge--react   { background: #61dafb22; color: #61dafb; }
+.card__badge--vue     { background: #42b88322; color: #42b883; }
 .card__badge--hybrid  { background: #a78bfa22; color: #a78bfa; }
 
 .card__title {
