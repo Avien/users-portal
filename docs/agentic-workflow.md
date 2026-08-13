@@ -115,3 +115,11 @@ The generator enforces architecture at **creation time** — correct Nx tags, la
 | `/sync-contract` | New shared type or method | Dual-framework propagation, validates |
 | `/architecture-check` | Before PR (local) | Drift detection across all layers |
 | PR Review Agent | Every PR (CI) | Same drift checks, automated, posted as a PR comment |
+
+## Future Direction
+
+A product-facing business agent is planned as the next evolution of the
+agentic architecture, applying the same LLM + tool-calling pattern to
+Users/Orders business data rather than the source code.
+
+See the [Project Roadmap](./roadmap.md) for this and other planned work.

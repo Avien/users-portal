@@ -240,3 +240,4 @@ This project demonstrates:
 - **[docs/mfe-architecture.md](docs/mfe-architecture.md)** — full `mount()` API, Platform SDK internals, module-federation gotchas
 - **[docs/state-flow.md](docs/state-flow.md)** — per-framework facade code, both state-flow diagrams (Angular/React)
 - **[docs/agentic-workflow.md](docs/agentic-workflow.md)** — slash command examples, the autonomous agent's tool loop, generator internals, PR review agent design
+- **[docs/roadmap.md](docs/roadmap.md)** — planned work: business AI agent, authentication & platform, multi-framework MFE evolution, runtime resilience
