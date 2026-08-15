@@ -44,9 +44,9 @@ scaffold_domain / run_validation    getOrderMonitoringSignals
 | Orchestration | Direct Claude API integration, structured tool/function calling, a multi-step agent loop — same hand-rolled pattern as `tools/agent.mjs`, different tool set |
 | Tools | Small, typed, read-only business capabilities (concepts: `searchUsers`, `getUserDetails`, `getUserOrders`, `getOrderMonitoringSignals`) — the LLM selects among them, never gets raw state access |
 | Data | Existing mock/in-memory Users/Orders data — no real database or backend required |
-| Boundaries | Tools sit behind clean typed contracts, framework-agnostic where practical so both Angular and React UI can consume the same capability; respects the existing Nx layer/framework tags and facade architecture |
+| UI delivery | A single hand-rolled, framework-free **`<business-agent-widget>`** Web Component (Shadow DOM, attribute-driven config, `CustomEvent` output) — built once and dropped into Angular, React, and Vue alike, rather than a separate UI implementation per framework. Mirrors `<auth-login-widget>` below; this is a cross-cutting capability, not a domain feature the repo is trying to compare idiomatically across frameworks |
 | Key handling | The LLM API key stays server-side, behind the smallest viable serverless/API boundary — never called from browser code |
-| Separation | LLM/agent orchestration, business tools, and framework-specific UI stay in three distinct layers, mirroring the existing facade discipline |
+| Separation | LLM/agent orchestration, business tools, and the widget's UI stay in distinct layers; each host app only wires a thin `<script src>` + a couple of `CustomEvent` listeners, no facade reimplementation required |
 
 **Not yet implemented.**
 
