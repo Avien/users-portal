@@ -207,6 +207,20 @@ if (isMain) {
   const client = new Anthropic();
 
   const server = createServer((req, res) => {
+    // Permissive local-dev CORS: the widget's default endpoint is same-origin
+    // relative (/api/business-agent), but local dev calls this server cross-origin
+    // from whichever app port is hosting the widget (4000/4200/4201/4202), so the
+    // browser needs an explicit allow rather than the same-origin default.
+    res.setHeader('access-control-allow-origin', '*');
+    res.setHeader('access-control-allow-methods', 'POST, OPTIONS');
+    res.setHeader('access-control-allow-headers', 'content-type');
+
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
     if (req.method !== 'POST' || req.url !== '/api/business-agent') {
       res.writeHead(404, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: 'POST /api/business-agent only' }));
