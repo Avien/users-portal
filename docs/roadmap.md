@@ -19,7 +19,7 @@ business-domain agent that answers natural-language questions over the
 existing Users/Orders data.
 
 ```text
-Development agent (today):          Business agent (planned):
+Development agent (today):          Business agent (Phases 1-2 built):
 
 Developer goal                      User question
     ↓                                    ↓
@@ -33,22 +33,24 @@ scaffold_domain / run_validation    getOrderMonitoringSignals
                                      Business-oriented answer
 ```
 
-**Example prompts it should eventually handle:**
+**Example prompts it already handles** (via the Phase 1 server, `POST /api/business-agent`):
 - "Find users with recent high-value orders or suspicious order bursts and summarize which users need attention."
 - "Show me the most important users to review based on their recent order activity and explain why."
 
-**Intended shape** (exact contracts deferred to implementation):
+**Shape** (Phases 1-2 implemented; exact detail below reflects the real, shipped contracts, not a plan):
 
-| Concern | Intention |
+| Concern | Status |
 | :--- | :--- |
-| Orchestration | Direct Claude API integration, structured tool/function calling, a multi-step agent loop — same hand-rolled pattern as `tools/agent.mjs`, different tool set |
-| Tools | Small, typed, read-only business capabilities (concepts: `searchUsers`, `getUserDetails`, `getUserOrders`, `getOrderMonitoringSignals`) — the LLM selects among them, never gets raw state access |
-| Data | Existing mock/in-memory Users/Orders data — no real database or backend required |
-| UI delivery | A single hand-rolled, framework-free **`<business-agent-widget>`** Web Component (Shadow DOM, attribute-driven config, `CustomEvent` output) — built once and dropped into Angular, React, and Vue alike, rather than a separate UI implementation per framework. Mirrors `<auth-login-widget>` below; this is a cross-cutting capability, not a domain feature the repo is trying to compare idiomatically across frameworks |
-| Key handling | The LLM API key stays server-side, behind the smallest viable serverless/API boundary — never called from browser code |
-| Separation | LLM/agent orchestration, business tools, and the widget's UI stay in distinct layers; each host app only wires a thin `<script src>` + a couple of `CustomEvent` listeners, no facade reimplementation required |
+| Orchestration | ✅ **Implemented** — `tools/business-agent-server.ts`, direct Claude API integration, structured tool/function calling, a multi-step agent loop (same hand-rolled pattern as `tools/agent.mjs`, different tool set) |
+| Tools | ✅ **Implemented** — 3 typed, read-only tools (`searchUsers`, `getUserOrders`, `getOrderMonitoringSignals`), thin wrappers reusing existing `@portal/users/utils` logic; the LLM selects among them, never gets raw state access |
+| Data | ✅ Existing mock/in-memory Users/Orders data — no real database or backend required |
+| UI delivery | ✅ **Implemented** — `libs/business-agent-widget`, a single hand-rolled, framework-free **`<business-agent-widget>`** Web Component (Shadow DOM, attribute-driven `endpoint` config, `CustomEvent` output), built once as a real Vite lib-mode bundle. Mirrors `<auth-login-widget>` below; this is a cross-cutting capability, not a domain feature the repo is trying to compare idiomatically across frameworks |
+| Public event contract | ✅ **Implemented** — `BUSINESS_AGENT_ANSWER_EVENT` / `BUSINESS_AGENT_ERROR_EVENT` constants + typed `AgentAnswerEventDetail`/`AgentErrorEventDetail`, exported from the lib's public `index.ts` |
+| Key handling | ✅ **Implemented** — the Claude API key stays server-side in `tools/business-agent-server.ts`, never called from browser code |
+| Separation | ✅ **Implemented** — LLM/agent orchestration, business tools, and the widget's UI stay in distinct layers; the widget only fetches + renders, no business logic in the browser |
+| Framework wiring | ❌ **Not yet implemented (Phase 3)** — the widget isn't dropped into Angular, React, or Vue yet; each host app would only need a thin `<script src>` + a couple of `CustomEvent` listeners, no facade reimplementation |
 
-**Not yet implemented.**
+**Not yet reachable from any app** — Phases 1 and 2 are real, tested, merged code (server + widget), but until Phase 3 wires the widget into at least one app, there's no way for an end user to actually use it.
 
 ### Authentication & Platform
 
