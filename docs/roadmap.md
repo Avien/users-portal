@@ -19,7 +19,7 @@ business-domain agent that answers natural-language questions over the
 existing Users/Orders data.
 
 ```text
-Development agent (today):          Business agent (planned):
+Development agent (today):          Business agent:
 
 Developer goal                      User question
     ↓                                    ↓
@@ -33,22 +33,109 @@ scaffold_domain / run_validation    getOrderMonitoringSignals
                                      Business-oriented answer
 ```
 
-**Example prompts it should eventually handle:**
-- "Find users with recent high-value orders or suspicious order bursts and summarize which users need attention."
+**Example prompts already working end-to-end via the Phase 1 server:**
+- "Find users with recent high-value orders and summarize which users need attention."
 - "Show me the most important users to review based on their recent order activity and explain why."
 
-**Intended shape** (exact contracts deferred to implementation):
+*(Burst-order detection — multiple orders for the same user in a short
+window — is out of scope for Phase 1: the static mock dataset the tools
+read from has no order-arrival timestamps. It would need the live WS
+stream's data, not this REST mock data, so it stays out of scope unless
+timestamped/live-stream data is added.)*
 
-| Concern | Intention |
-| :--- | :--- |
-| Orchestration | Direct Claude API integration, structured tool/function calling, a multi-step agent loop — same hand-rolled pattern as `tools/agent.mjs`, different tool set |
-| Tools | Small, typed, read-only business capabilities (concepts: `searchUsers`, `getUserDetails`, `getUserOrders`, `getOrderMonitoringSignals`) — the LLM selects among them, never gets raw state access |
-| Data | Existing mock/in-memory Users/Orders data — no real database or backend required |
-| UI delivery | A single hand-rolled, framework-free **`<business-agent-widget>`** Web Component (Shadow DOM, attribute-driven config, `CustomEvent` output) — built once and dropped into Angular, React, and Vue alike, rather than a separate UI implementation per framework. Mirrors `<auth-login-widget>` below; this is a cross-cutting capability, not a domain feature the repo is trying to compare idiomatically across frameworks |
-| Key handling | The LLM API key stays server-side, behind the smallest viable serverless/API boundary — never called from browser code |
-| Separation | LLM/agent orchestration, business tools, and the widget's UI stay in distinct layers; each host app only wires a thin `<script src>` + a couple of `CustomEvent` listeners, no facade reimplementation required |
+#### Phase 1 — Business Agent Engine ✅ Implemented
 
-**Not yet implemented.**
+- Direct Claude API integration, structured tool/function calling, a
+  multi-step tool-use loop (same hand-rolled pattern as `tools/agent.mjs`)
+- 3 typed, read-only business tools (`searchUsers`, `getUserOrders`,
+  `getOrderMonitoringSignals`), thin wrappers reusing existing
+  `@portal/users/utils` logic — no reimplemented domain logic
+- Local `POST /api/business-agent` (`tools/business-agent-server.ts`)
+- Tests covering the tools and the orchestration loop
+
+#### Phase 2 — Shared Web Component ✅ Implemented
+
+- Framework-free **`<business-agent-widget>`** (`libs/business-agent-widget`)
+  — Shadow DOM, configurable `endpoint` attribute, loading/error/answer
+  states, built once as a real Vite lib-mode bundle
+- Typed public `CustomEvent` contract (`BUSINESS_AGENT_ANSWER_EVENT` /
+  `BUSINESS_AGENT_ERROR_EVENT` + detail interfaces), exported from the
+  lib's public `index.ts`
+- Tests covering the widget's behavior and contract
+
+#### Phase 3 — Host Integration ⬜ Not yet implemented
+
+The same `<business-agent-widget>` gets dropped into all three apps, not
+reimplemented per framework — this is exactly what the Phase 2 Web
+Component pivot exists to avoid.
+
+```text
+Angular ─┐
+React   ─┼── <business-agent-widget>
+Vue     ─┘
+```
+
+Each host app should:
+- load/register the shared Web Component
+- render the same `<business-agent-widget>` — no per-framework AI UI
+- use the exported typed event contract where host-level integration is
+  useful (e.g. reacting to an answer), not as a requirement
+- avoid a framework-specific Business Agent facade unless there's a
+  genuine framework-state requirement — the widget owns its own state
+- contain no LLM orchestration or business-agent logic — that stays
+  server-side, unchanged from Phase 1
+
+#### Phase 4 — Production API / Deployment ⬜ Not yet implemented
+
+`tools/business-agent-server.ts` is a Phase 1 development/proof server
+(`node:http` on `localhost:8787`), not the final deployed backend.
+
+```text
+POST /api/business-agent
+        ↓
+server-side/serverless handler
+        ↓
+existing Business Agent orchestration
+        ↓
+Claude API
+        ↓
+business tools
+```
+
+- `ANTHROPIC_API_KEY` remains server-side only
+- Reuses the existing `runAgent`, tool definitions, and dispatch/tool-loop
+  logic as-is — no duplicated agent implementation for deployment
+- The smallest serverless/API boundary compatible with the project's
+  current deployment architecture
+- The deployed widget uses its default same-origin `/api/business-agent`;
+  the configurable `endpoint` attribute stays useful for local dev only
+- The permissive `Access-Control-Allow-Origin: *` added for local dev is
+  explicitly a dev-only concern, not the production architecture
+- Verified from the actually deployed application, not only `localhost`
+
+#### Phase 5 — Documentation / Demo Closeout ⬜ Not yet implemented
+
+- Move this roadmap item from in-progress to **Completed**
+- Update [Agentic AI Development](./agentic-workflow.md) to clearly
+  distinguish all four AI surfaces in this repo: the Claude Code /
+  agentic development workflow, the autonomous development agent
+  (`tools/agent.mjs`), the PR review agent (`tools/pr-review-agent.mjs`),
+  and the product-facing Business Agent
+- Update the README only where it improves portfolio discoverability
+- Document one or two real example prompts with their actual tool traces
+- Verify the finished feature from the deployed apps
+
+```text
+Phase 1  Business Agent engine                      ✅
+Phase 2  Shared Web Component                       ✅
+Phase 3  Angular / React / Vue host integration      ⬜
+Phase 4  Real deployed /api/business-agent endpoint  ⬜
+Phase 5  Docs + live-demo closeout                   ⬜
+```
+
+**Not complete until Phase 5** — Phase 3 alone (host integration against
+the local dev server) is not a shipped feature; Phase 4 (real deployment)
+and Phase 5 (closeout) are required before this item moves to Completed.
 
 ### Authentication & Platform
 
