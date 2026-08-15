@@ -1,0 +1,13 @@
+{
+  "name": "business-agent-widget",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/business-agent-widget/src",
+  "prefix": "lib",
+  "projectType": "library",
+  "tags": ["type:utils", "scope:business-agent-widget", "framework:shared"],
+  "targets": {
+    "lint": {
+      "executor": "@nx/eslint:lint"
+    }
+  }
+}
