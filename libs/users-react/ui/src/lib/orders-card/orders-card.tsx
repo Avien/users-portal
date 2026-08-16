@@ -10,27 +10,30 @@ interface OrdersCardProps {
   error: string | null;
 }
 
+const ROW_HEIGHT = 52;
+const VISIBLE_ROWS = 8;
+const VIEWPORT_HEIGHT = VISIBLE_ROWS * ROW_HEIGHT;
+
 export const OrdersCard = memo(function OrdersCard({ orders, loading, loaded, error }: OrdersCardProps) {
   return (
     <div style={cardStyle}>
       <h2 style={{ margin: '0 0 0.75rem' }}>Orders</h2>
-      {error ? (
-        <p style={errorStyle}>{error}</p>
-      ) : loading ? (
-        <p style={mutedStyle}>Loading orders...</p>
-      ) : orders.length > 0 ? (
-        <OrdersList orders={orders} />
-      ) : loaded ? (
-        <p style={mutedStyle}>No orders for this user.</p>
-      ) : null}
+      <div style={viewportStyle}>
+        {error ? (
+          <p style={errorStyle}>{error}</p>
+        ) : loading ? (
+          <p style={mutedStyle}>Loading orders...</p>
+        ) : orders.length > 0 ? (
+          <OrdersList orders={orders} />
+        ) : loaded ? (
+          <p style={mutedStyle}>No orders for this user.</p>
+        ) : null}
+      </div>
     </div>
   );
 });
 
 // ─── OrdersList ──────────────────────────────────────────────────────────────
-
-const ROW_HEIGHT = 52;
-const VISIBLE_ROWS = 8;
 
 const OrdersList = memo(function OrdersList({ orders }: { orders: Order[] }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -42,12 +45,10 @@ const OrdersList = memo(function OrdersList({ orders }: { orders: Order[] }) {
     overscan: 3,
   });
 
-  const containerHeight = Math.min(orders.length, VISIBLE_ROWS) * ROW_HEIGHT;
-
   return (
     <div
       ref={scrollRef}
-      style={{ ...listStyle, height: containerHeight, overflowY: 'auto' }}
+      style={{ ...listStyle, height: VIEWPORT_HEIGHT, overflowY: 'auto' }}
       role="list"
       aria-label="Orders"
     >
@@ -88,6 +89,16 @@ const cardStyle: CSSProperties = {
   border: '1px solid #d8dbe2',
   borderRadius: 12,
   background: '#fff',
+};
+
+// Fixed height regardless of state (loading/empty/error/list) — this is what
+// keeps content below OrdersCard (Business Agent) from shifting vertically when
+// switching users or during the mock loading latency.
+const viewportStyle: CSSProperties = {
+  height: VIEWPORT_HEIGHT,
+  display: 'flex',
+  flexDirection: 'column',
+  justifyContent: 'center', // centers loading/empty/error text; no effect on the list, which already fills the box
 };
 
 const listStyle: CSSProperties = {

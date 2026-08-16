@@ -7,7 +7,7 @@
     "lint": "nx run-many -t lint",
     "test": "nx run-many -t test",
     "start:angular": "nx serve users-portal-angular",
-    "start:react": "concurrently -n ws,agent,react -c yellow,cyan,green 'npm run mock:ws' 'npm run business-agent' 'VITE_BUSINESS_AGENT_ENDPOINT=http://localhost:8787/api/business-agent nx serve users-portal-react --port=4201'",
+    "start:react": "concurrently -n ws,agent,react -c yellow,cyan,green 'MOCK_ORDERS_API_DELAY_MS=800 npm run mock:ws' 'npm run business-agent' 'VITE_BUSINESS_AGENT_ENDPOINT=http://localhost:8787/api/business-agent nx serve users-portal-react --port=4201'",
     "start:vue": "nx serve users-portal-vue",
     "start:shell": "npx serve apps/portal-shell --listen 4000",
     "mock:ws": "node tools/mock-orders-ws-server.mjs",

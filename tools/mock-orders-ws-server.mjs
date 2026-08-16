@@ -5,6 +5,16 @@ import { applyCors } from './cors.mjs';
 
 const PORT = process.env['PORT'] ? Number(process.env['PORT']) : 3000;
 
+// Local-demo-only artificial latency on GET /api/orders (never /api/orders-snapshot
+// — no UX reason to slow down the Business Agent). Defaults to 0, which is what
+// Railway's production deployment gets (railway.json's startCommand runs this file
+// directly, bypassing package.json scripts entirely, so it never sets this var).
+// The demo value is applied only in package.json's start:react script.
+const ORDERS_API_DELAY_MS = (() => {
+  const raw = Number(process.env['MOCK_ORDERS_API_DELAY_MS']);
+  return Number.isFinite(raw) && raw > 0 ? raw : 0;
+})();
+
 const STATUSES = ['pending', 'processing', 'completed', 'cancelled'];
 const randomStatus = () => STATUSES[Math.floor(Math.random() * STATUSES.length)];
 const userIds = [1, 2, 3];
@@ -52,8 +62,15 @@ const server = createServer((req, res) => {
   }
 
   if (req.method === 'GET' && req.url === '/api/orders') {
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify(getOrders()));
+    const respond = () => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(getOrders()));
+    };
+    if (ORDERS_API_DELAY_MS > 0) {
+      setTimeout(respond, ORDERS_API_DELAY_MS);
+    } else {
+      respond();
+    }
     return;
   }
 
