@@ -122,6 +122,19 @@ describe('useOrdersStream', () => {
     ]);
   });
 
+  it('does not duplicate an order already present in the cache (REST snapshot vs. WS race)', () => {
+    // The initial REST fetch now reads the same canonical live store this order
+    // came from, so it can race this WS message and already include it.
+    const { queryClient, wrapper } = makeWrapper();
+    const existing: Order[] = [{ id: 101, userId: 1, total: 120 }, ORDER_NORMAL];
+    queryClient.setQueryData<Order[]>(['orders', 1], existing);
+
+    renderHook(() => useOrdersStream(), { wrapper });
+    MockWebSocket.latest().emit({ type: 'order-update', payload: ORDER_NORMAL });
+
+    expect(queryClient.getQueryData<Order[]>(['orders', 1])).toEqual(existing);
+  });
+
   it('buffers the order into pending when no cache exists for that user', () => {
     const { queryClient, wrapper } = makeWrapper();
     renderHook(() => useOrdersStream(), { wrapper });

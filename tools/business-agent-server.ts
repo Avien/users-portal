@@ -3,14 +3,17 @@ import { createServer } from 'node:http';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import type { Order } from '../libs/users/src/index.ts';
 import {
   MOCK_USERS,
-  MOCK_ORDERS,
   getOrdersByUserId,
   buildUserTotalOrdersVm,
   isSuspiciousHighValueOrder,
+  isSecondOrderWithinBurstWindow,
+  ORDER_BURST_WINDOW_MS,
   SUSPICIOUS_ORDER_TOTAL_THRESHOLD,
 } from '../libs/users/src/index.ts';
+import { applyCors } from './cors.mjs';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase 1 of the Product-Facing Business AI Agent (see docs/roadmap.md).
@@ -20,6 +23,11 @@ import {
 // the dev-facing scaffold/edit/validate tools. No UI, no streaming to the
 // caller, no conversation history, no persistence — this only proves the
 // agent loop can answer a real multi-tool business question end to end.
+//
+// Orders are read from the canonical store (tools/orders-store.mjs, served by
+// tools/mock-orders-ws-server.mjs) as one atomic snapshot per incoming request
+// — not a static import — so the agent sees the same current business state as
+// every frontend, including orders that arrived after this process started.
 //
 //   ANTHROPIC_API_KEY=... npm run business-agent
 //   curl -s localhost:8787/api/business-agent -X POST \
@@ -31,6 +39,11 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MODEL = 'claude-opus-4-8';
 const MAX_TURNS = 8;
 const PORT = Number(process.env['PORT'] ?? 8787);
+
+// Local-dev fallback only — production must set ORDERS_API_URL explicitly to a
+// real deployed backend's snapshot endpoint (see docs/roadmap.md Phase 4).
+const DEFAULT_ORDERS_SNAPSHOT_URL = 'http://localhost:3000/api/orders-snapshot';
+const ORDERS_SNAPSHOT_URL = process.env['ORDERS_API_URL'] || DEFAULT_ORDERS_SNAPSHOT_URL;
 
 // Same dependency-free .env loader as tools/agent.mjs and tools/pr-review-agent.mjs.
 const loadEnv = () => {
@@ -47,9 +60,44 @@ const loadEnv = () => {
   }
 };
 
+// ── Canonical orders snapshot — one atomic read (orders + arrival metadata
+// together) per incoming HTTP request, fetched once and threaded through the
+// whole tool-use loop. Deliberately NOT two separate fetches (GET /api/orders
+// then a second call for arrivals): an order could arrive between them. Retries
+// briefly to absorb the `concurrently` startup race with tools/mock-orders-ws-
+// server.mjs, then fails loudly — no silent fallback to stale static data,
+// since that would let the agent give confident answers about data it can no
+// longer prove is current. ──
+
+export interface OrdersSnapshot {
+  orders: Order[];
+  arrivals: Record<number, number>;
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export async function fetchOrdersSnapshot(): Promise<OrdersSnapshot> {
+  const retryDelaysMs = [250, 500];
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retryDelaysMs.length; attempt++) {
+    try {
+      const res = await fetch(ORDERS_SNAPSHOT_URL);
+      if (!res.ok) throw new Error(`Orders snapshot request failed (${res.status})`);
+      return (await res.json()) as OrdersSnapshot;
+    } catch (err) {
+      lastError = err;
+      if (attempt < retryDelaysMs.length) await sleep(retryDelaysMs[attempt]);
+    }
+  }
+  const reason = lastError instanceof Error ? lastError.message : String(lastError);
+  throw new Error(
+    `Orders data source unavailable at ${ORDERS_SNAPSHOT_URL} — is "npm run mock:ws" running? (${reason})`
+  );
+}
+
 // ── Read-only business tools — thin wrappers over existing @portal/users/utils logic ──
 // No new domain logic: searchUsers/getUserOrders/getOrderMonitoringSignals only
-// filter/summarize what MOCK_USERS + MOCK_ORDERS and the shared utils already provide.
+// filter/summarize what the current orders snapshot and shared utils already provide.
 // Exported (and side-effect-free) so tests can call tools.<name>.run(...) directly.
 
 export const tools = {
@@ -66,7 +114,7 @@ export const tools = {
         },
       },
     },
-    run: ({ query }: { query?: string }) => {
+    run: ({ query }: { query?: string }, _snapshot: OrdersSnapshot) => {
       const q = query?.trim().toLowerCase();
       const matches = q ? MOCK_USERS.filter((u) => u.name.toLowerCase().includes(q)) : MOCK_USERS;
       return { users: matches };
@@ -77,7 +125,8 @@ export const tools = {
     definition: {
       name: 'getUserOrders',
       description:
-        'Get every order for one user (by numeric userId), plus a total-spend summary. ' +
+        'Get every current order for one user (by numeric userId), plus a total-spend summary — ' +
+        'reflects orders up to the moment this tool is called, not a fixed starting dataset. ' +
         'Use searchUsers first if you only know the user by name.',
       input_schema: {
         type: 'object' as const,
@@ -85,9 +134,9 @@ export const tools = {
         required: ['userId'],
       },
     },
-    run: ({ userId }: { userId: number }) => {
+    run: ({ userId }: { userId: number }, snapshot: OrdersSnapshot) => {
       const user = MOCK_USERS.find((u) => u.id === userId) ?? null;
-      const orders = getOrdersByUserId(MOCK_ORDERS, userId);
+      const orders = getOrdersByUserId(snapshot.orders, userId);
       const summary = buildUserTotalOrdersVm(user, orders);
       if (!user) return { error: `No user with id ${userId}` };
       return { orders, summary };
@@ -98,26 +147,31 @@ export const tools = {
     definition: {
       name: 'getOrderMonitoringSignals',
       description:
-        `Flag which of a user's orders are high-value (>= $${SUSPICIOUS_ORDER_TOTAL_THRESHOLD}, the ` +
-        'same threshold the live order-monitoring toasts use). Use this to judge which users need ' +
-        'attention. Note: this static mock dataset has no order-arrival timestamps, so burst-arrival ' +
-        'detection (available in the live WS stream) is out of scope here — only the high-value signal applies.',
+        `Flag which of a user's current orders are high-value (>= $${SUSPICIOUS_ORDER_TOTAL_THRESHOLD}) ` +
+        'and whether they have received multiple orders within a short burst window — the same two ' +
+        "signals the live UI's warning/critical monitoring toasts use. Use this to judge which users " +
+        'need attention right now, including orders that arrived after this conversation started.',
       input_schema: {
         type: 'object' as const,
         properties: { userId: { type: 'number', description: 'Numeric user id, e.g. 3' } },
         required: ['userId'],
       },
     },
-    run: ({ userId }: { userId: number }) => {
+    run: ({ userId }: { userId: number }, snapshot: OrdersSnapshot) => {
       const user = MOCK_USERS.find((u) => u.id === userId) ?? null;
       if (!user) return { error: `No user with id ${userId}` };
-      const orders = getOrdersByUserId(MOCK_ORDERS, userId);
+      const orders = getOrdersByUserId(snapshot.orders, userId);
       const highValueOrders = orders.filter(isSuspiciousHighValueOrder);
+      const arrivalTimestamps = orders
+        .map((o) => snapshot.arrivals[o.id])
+        .filter((t): t is number => typeof t === 'number');
+      const recentBurst = isSecondOrderWithinBurstWindow(arrivalTimestamps, ORDER_BURST_WINDOW_MS, Date.now());
       return {
         userName: user.name,
         threshold: SUSPICIOUS_ORDER_TOTAL_THRESHOLD,
         highValueOrderCount: highValueOrders.length,
         highValueOrders,
+        recentBurst,
       };
     },
   },
@@ -135,23 +189,27 @@ specific users and figures that drove your conclusion, not a description of whic
 
 // ── The agentic loop — same model → tool → result → model shape as tools/agent.mjs,
 // minus the mutating-tool confirmation gate (every tool here is read-only). The
-// Anthropic client is a parameter (not a module-level singleton) so tests can pass
-// a fake one instead of calling the real API. ──
+// Anthropic client and the orders snapshot are both parameters (not module-level
+// state) so tests can pass fakes instead of calling the real API or a real server. ──
 
-export const dispatch = (block: Anthropic.ToolUseBlock) => {
+export const dispatch = (block: Anthropic.ToolUseBlock, snapshot: OrdersSnapshot) => {
   const tool = tools[block.name as ToolName];
   if (!tool) {
     return { type: 'tool_result' as const, tool_use_id: block.id, content: `Unknown tool: ${block.name}`, is_error: true };
   }
   try {
-    const result = tool.run(block.input as never);
+    const result = tool.run(block.input as never, snapshot);
     return { type: 'tool_result' as const, tool_use_id: block.id, content: JSON.stringify(result) };
   } catch (err) {
     return { type: 'tool_result' as const, tool_use_id: block.id, content: `Tool error: ${(err as Error).message}`, is_error: true };
   }
 };
 
-export const runAgent = async (client: Pick<Anthropic, 'messages'>, prompt: string) => {
+export const runAgent = async (
+  client: Pick<Anthropic, 'messages'>,
+  prompt: string,
+  snapshot: OrdersSnapshot
+) => {
   const messages: Anthropic.MessageParam[] = [{ role: 'user', content: prompt }];
   const toolDefs = Object.values(tools).map((t) => t.definition);
   const trace: { name: string; input: unknown }[] = [];
@@ -182,7 +240,7 @@ export const runAgent = async (client: Pick<Anthropic, 'messages'>, prompt: stri
     const toolUses = message.content.filter((b) => b.type === 'tool_use');
     const results = toolUses.map((block) => {
       trace.push({ name: block.name, input: block.input });
-      return dispatch(block);
+      return dispatch(block, snapshot);
     });
     messages.push({ role: 'user', content: results });
   }
@@ -207,13 +265,7 @@ if (isMain) {
   const client = new Anthropic();
 
   const server = createServer((req, res) => {
-    // Permissive local-dev CORS: the widget's default endpoint is same-origin
-    // relative (/api/business-agent), but local dev calls this server cross-origin
-    // from whichever app port is hosting the widget (4000/4200/4201/4202), so the
-    // browser needs an explicit allow rather than the same-origin default.
-    res.setHeader('access-control-allow-origin', '*');
-    res.setHeader('access-control-allow-methods', 'POST, OPTIONS');
-    res.setHeader('access-control-allow-headers', 'content-type');
+    applyCors(req, res, process.env['BUSINESS_AGENT_ALLOWED_ORIGINS'], 'POST, OPTIONS');
 
     if (req.method === 'OPTIONS') {
       res.writeHead(204);
@@ -237,10 +289,17 @@ if (isMain) {
           res.end(JSON.stringify({ error: '"prompt" (string) is required in the JSON body' }));
           return;
         }
-        const result = await runAgent(client, prompt);
+        console.log(`\n→ prompt: "${prompt}"`);
+        const snapshot = await fetchOrdersSnapshot();
+        const result = await runAgent(client, prompt, snapshot);
+        for (const call of result.trace) {
+          console.log(`  ● ${call.name}(${JSON.stringify(call.input)})`);
+        }
+        console.log(`  ✓ answer (${result.turns} turn${result.turns === 1 ? '' : 's'}): ${result.answer}\n`);
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify(result, null, 2));
       } catch (err) {
+        console.error(`  ✗ error: ${(err as Error).message}\n`);
         res.writeHead(500, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ error: (err as Error).message }));
       }

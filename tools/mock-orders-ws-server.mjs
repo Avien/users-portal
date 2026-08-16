@@ -1,22 +1,12 @@
+import { createServer } from 'node:http';
 import { WebSocketServer } from 'ws';
+import { addOrder, getOrders, getSnapshot } from './orders-store.mjs';
+import { applyCors } from './cors.mjs';
 
 const PORT = process.env['PORT'] ? Number(process.env['PORT']) : 3000;
-const wss = new WebSocketServer({ port: PORT, path: '/orders' });
 
-// Keep in sync with `libs/users/data-access/src/lib/services/user.mocks.ts` (MOCK_ORDERS).
 const STATUSES = ['pending', 'processing', 'completed', 'cancelled'];
 const randomStatus = () => STATUSES[Math.floor(Math.random() * STATUSES.length)];
-
-const baseOrders = [
-  { id: 101, userId: 1, total: 120.5,  status: 'completed'  },
-  { id: 102, userId: 1, total: 79.9,   status: 'pending'    },
-  { id: 201, userId: 2, total: 220,    status: 'processing' },
-  { id: 202, userId: 2, total: 18.75,  status: 'completed'  },
-  { id: 301, userId: 3, total: 510.1,  status: 'completed'  },
-  { id: 302, userId: 3, total: 99.9,   status: 'cancelled'  },
-  { id: 303, userId: 3, total: 45,     status: 'pending'    },
-];
-
 const userIds = [1, 2, 3];
 
 const randomIntInclusive = (min, max) => {
@@ -27,48 +17,105 @@ const randomIntInclusive = (min, max) => {
 
 const randomMoney = () => Number((Math.random() * 750 + 25).toFixed(2));
 
-console.log(`Mock WS running at ws://localhost:${PORT}/orders`);
+// Computed once at startup from the canonical store's seed data, then kept current
+// by reading getOrders() fresh on every allocation — safe across multiple
+// concurrently-running per-connection timers writing into the same store.
+const nextIdByUser = new Map(
+  userIds.map((userId) => {
+    const maxForUser = Math.max(0, ...getOrders().filter((o) => o.userId === userId).map((o) => o.id));
+    return [userId, maxForUser + 1];
+  })
+);
+
+const allocateNewId = (userId) => {
+  let candidate = nextIdByUser.get(userId) ?? userId * 100 + 1;
+  const existingIds = new Set(getOrders().map((o) => o.id));
+  while (existingIds.has(candidate)) {
+    candidate += 1;
+  }
+  nextIdByUser.set(userId, candidate + 1);
+  return candidate;
+};
+
+// ── HTTP: canonical reads for both frontends (plain Order[]) and the Business
+// Agent (one atomic orders+arrivals snapshot — see tools/orders-store.mjs). The
+// WebSocketServer below attaches to this same server/port instead of creating
+// its own implicit one, so one process/port serves both transports. ──
+
+const server = createServer((req, res) => {
+  applyCors(req, res, process.env['ORDERS_API_ALLOWED_ORIGINS']);
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/orders') {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(getOrders()));
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/orders-snapshot') {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(getSnapshot()));
+    return;
+  }
+
+  res.writeHead(404, { 'content-type': 'application/json' });
+  res.end(JSON.stringify({ error: 'Not found' }));
+});
+
+const wss = new WebSocketServer({ server, path: '/orders' });
+
+// Fires once per server process, not once per connection — with shared canonical
+// state, a second tab connecting would otherwise replay a burst the first tab
+// already saw.
+let hasFiredStartupBurst = false;
 
 wss.on('connection', (socket) => {
   console.log('Client connected to mock orders socket');
 
-  const liveOrders = new Map(baseOrders.map((o) => [o.id, { ...o }]));
-
-  const nextIdByUser = new Map(
-    userIds.map((userId) => {
-      const maxForUser = Math.max(
-        0,
-        ...[...liveOrders.values()].filter((o) => o.userId === userId).map((o) => o.id)
-      );
-      return [userId, maxForUser + 1];
-    })
-  );
-
-  const allocateNewId = (userId) => {
-    let candidate = nextIdByUser.get(userId) ?? userId * 100 + 1;
-    while (liveOrders.has(candidate)) {
-      candidate += 1;
+  const broadcast = (payload) => {
+    const message = JSON.stringify({ type: 'order-update', payload });
+    for (const client of wss.clients) {
+      if (client.readyState === client.OPEN) client.send(message);
     }
-    nextIdByUser.set(userId, candidate + 1);
-    return candidate;
   };
 
   const emit = (userId, total = randomMoney()) => {
     const id = allocateNewId(userId);
     const payload = { id, userId, total: Number(total.toFixed(2)), status: randomStatus() };
-    liveOrders.set(payload.id, { ...payload });
+    addOrder(payload);
     console.log(`WS emit order id=${payload.id} userId=${payload.userId} total=${payload.total} status=${payload.status}`);
-    socket.send(JSON.stringify({ type: 'order-update', payload }));
+    broadcast(payload);
   };
 
-  // Three rapid orders for the same user on connect:
+  // Three rapid orders for the same user on the first-ever connection:
   // - first order is swallowed by the learning tick (monitoring baseline)
   // - second order total >= $500 → triggers the high-value warning toast
   // - third order within the burst window → triggers the critical burst toast
-  const burstUserId = userIds[0];
-  const burstTimer1 = setTimeout(() => emit(burstUserId), 500);
-  const burstTimer2 = setTimeout(() => emit(burstUserId, randomMoney() + 500), 1500);
-  const burstTimer3 = setTimeout(() => emit(burstUserId), 2500);
+  //
+  // hasFiredStartupBurst is only set once the first timer actually FIRES, not
+  // when it's scheduled — React StrictMode's dev-mode mount→unmount→remount
+  // cycle means the first connection is often ephemeral and closes (cancelling
+  // its timers via the socket 'close' handler below) before 500ms elapses. If
+  // the flag were set at scheduling time, that ephemeral connection would
+  // "use up" the demo burst without ever actually emitting it, leaving the
+  // real persisting connection with none.
+  let burstTimer1;
+  let burstTimer2;
+  let burstTimer3;
+  if (!hasFiredStartupBurst) {
+    const burstUserId = userIds[0];
+    burstTimer1 = setTimeout(() => {
+      hasFiredStartupBurst = true;
+      emit(burstUserId);
+    }, 500);
+    burstTimer2 = setTimeout(() => emit(burstUserId, randomMoney() + 500), 1500);
+    burstTimer3 = setTimeout(() => emit(burstUserId), 2500);
+  }
 
   const scheduleNext = () => {
     const delayMs = randomIntInclusive(5000, 15000);
@@ -91,4 +138,9 @@ wss.on('connection', (socket) => {
     clearTimeout(timer);
     console.log('Client disconnected from mock orders socket');
   });
+});
+
+server.listen(PORT, () => {
+  console.log(`Mock WS running at ws://localhost:${PORT}/orders`);
+  console.log(`Orders API at http://localhost:${PORT}/api/orders`);
 });

@@ -59,6 +59,24 @@ describe('BusinessAgentWidget', () => {
       const el = mount({ endpoint: 'http://localhost:8787/api/business-agent' });
       expect(el.endpoint).toBe('http://localhost:8787/api/business-agent');
     });
+
+    it('reflects a property assignment to the attribute (React/Angular/Vue property binding)', () => {
+      const el = mount();
+      el.endpoint = 'http://localhost:8787/api/business-agent';
+      expect(el.getAttribute('endpoint')).toBe('http://localhost:8787/api/business-agent');
+      expect(el.endpoint).toBe('http://localhost:8787/api/business-agent');
+    });
+
+    it.each([
+      ['undefined', undefined],
+      ['null', null],
+      ['empty string', ''],
+    ])('setting endpoint to %s removes the attribute and falls back to the default', (_label, value) => {
+      const el = mount({ endpoint: 'http://localhost:8787/api/business-agent' });
+      el.endpoint = value;
+      expect(el.hasAttribute('endpoint')).toBe(false);
+      expect(el.endpoint).toBe('/api/business-agent');
+    });
   });
 
   describe('submitting a question', () => {

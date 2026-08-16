@@ -84,6 +84,21 @@ export class BusinessAgentWidget extends HTMLElement {
     return this.getAttribute('endpoint') || DEFAULT_ENDPOINT;
   }
 
+  // A getter-only accessor breaks host frameworks that configure custom elements
+  // via DOM properties rather than attributes (React 19's default; Angular/Vue
+  // property bindings too) — `el.endpoint = value` needs a setter to exist at all.
+  // Reflects to the attribute so the getter above stays the single source of truth.
+  // null/undefined/empty (e.g. an unset Vite env var passed straight through as a
+  // prop) removes the attribute rather than setting it to a bad value, so the
+  // getter's own DEFAULT_ENDPOINT fallback stays effective.
+  set endpoint(value: string | null | undefined) {
+    if (value) {
+      this.setAttribute('endpoint', value);
+    } else {
+      this.removeAttribute('endpoint');
+    }
+  }
+
   connectedCallback() {
     this.form.addEventListener('submit', this.handleSubmit);
   }
