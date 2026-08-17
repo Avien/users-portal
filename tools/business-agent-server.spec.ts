@@ -6,9 +6,23 @@ import {
   runAgent,
   fetchOrdersSnapshot,
   sanitizeHistory,
+  estimateCostUsd,
+  getConfiguredModel,
   type OrdersSnapshot,
   type ConversationMessage,
 } from './business-agent-server.ts';
+
+// Every fake Anthropic response in this file needs a `usage` + `model` field —
+// the real SDK always returns both, and runAgent now reads message.usage.input_tokens
+// / .output_tokens / message.model unconditionally on every turn to build the
+// per-query usage aggregate. A response fixture missing either throws, by design —
+// this is exactly the "one Anthropic call" shape usage aggregation is built on.
+const USAGE = (inputTokens: number, outputTokens: number) => ({
+  input_tokens: inputTokens,
+  output_tokens: outputTokens,
+  cache_creation_input_tokens: null,
+  cache_read_input_tokens: null,
+});
 
 // Phase 1 tests (see docs/roadmap.md — Product-Facing Business AI Agent), extended
 // with the source-of-truth fix: tools read an explicit OrdersSnapshot parameter
@@ -151,6 +165,40 @@ describe('fetchOrdersSnapshot (Business Agent server)', () => {
   });
 });
 
+describe('fetchOrdersSnapshot — ORDERS_API_URL resolution', () => {
+  const ENV_KEY = 'ORDERS_API_URL';
+  const originalValue = process.env[ENV_KEY];
+
+  afterEach(() => {
+    if (originalValue === undefined) delete process.env[ENV_KEY];
+    else process.env[ENV_KEY] = originalValue;
+    vi.unstubAllGlobals();
+  });
+
+  it('fetches from the default snapshot URL when ORDERS_API_URL is unset', async () => {
+    delete process.env[ENV_KEY];
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ orders: [], arrivals: {} }) });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchOrdersSnapshot();
+
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:3000/api/orders-snapshot');
+  });
+
+  it('fetches from ORDERS_API_URL when set — proves the URL is resolved live on each call, not frozen at ' +
+    'module-import time (this module was already imported at the top of this file, well before this env ' +
+    'var was set here, and .env-loading via loadEnv() only runs even later than that, inside the isMain ' +
+    'block; a frozen module-level constant would have missed both)', async () => {
+    process.env[ENV_KEY] = 'http://example.internal/orders-snapshot';
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ orders: [], arrivals: {} }) });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchOrdersSnapshot();
+
+    expect(fetchMock).toHaveBeenCalledWith('http://example.internal/orders-snapshot');
+  });
+});
+
 describe('sanitizeHistory', () => {
   it('passes through valid user/assistant messages', () => {
     const history: ConversationMessage[] = [
@@ -217,10 +265,14 @@ describe('runAgent orchestration (Claude API mocked)', () => {
       {
         stop_reason: 'tool_use',
         content: [{ type: 'tool_use', id: 'toolu_1', name: 'getUserOrders', input: { userId: 3 } }],
+        usage: USAGE(100, 20),
+        model: 'claude-sonnet-5',
       },
       {
         stop_reason: 'end_turn',
         content: [{ type: 'text', text: 'Noam Katz has 3 orders totaling $655.00.', citations: [] }],
+        usage: USAGE(150, 40),
+        model: 'claude-sonnet-5',
       },
     ];
 
@@ -266,8 +318,15 @@ describe('runAgent orchestration (Claude API mocked)', () => {
       {
         stop_reason: 'tool_use',
         content: [{ type: 'tool_use', id: 'toolu_1', name: 'getUserOrders', input: { userId: 1 } }],
+        usage: USAGE(100, 20),
+        model: 'claude-sonnet-5',
       },
-      { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Avi Cohen has a new $999 order.', citations: [] }] },
+      {
+        stop_reason: 'end_turn',
+        content: [{ type: 'text', text: 'Avi Cohen has a new $999 order.', citations: [] }],
+        usage: USAGE(150, 40),
+        model: 'claude-sonnet-5',
+      },
     ];
     const fakeClient = {
       messages: {
@@ -300,8 +359,15 @@ describe('runAgent orchestration (Claude API mocked)', () => {
       {
         stop_reason: 'tool_use',
         content: [{ type: 'tool_use', id: 'toolu_1', name: 'getUserOrders', input: { userId: 3 } }],
+        usage: USAGE(100, 20),
+        model: 'claude-sonnet-5',
       },
-      { stop_reason: 'end_turn', content: [{ type: 'text', text: 'His last order was #303 for $45.00.', citations: [] }] },
+      {
+        stop_reason: 'end_turn',
+        content: [{ type: 'text', text: 'His last order was #303 for $45.00.', citations: [] }],
+        usage: USAGE(150, 40),
+        model: 'claude-sonnet-5',
+      },
     ];
     const fakeClient = {
       messages: {
@@ -338,7 +404,12 @@ describe('runAgent orchestration (Claude API mocked)', () => {
           calls.push({ ...params, messages: [...params.messages] });
           return {
             finalMessage: async () =>
-              ({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'ok', citations: [] }] }) as Anthropic.Message,
+              ({
+                stop_reason: 'end_turn',
+                content: [{ type: 'text', text: 'ok', citations: [] }],
+                usage: USAGE(10, 5),
+                model: 'claude-sonnet-5',
+              }) as Anthropic.Message,
           };
         },
       },
@@ -347,5 +418,242 @@ describe('runAgent orchestration (Claude API mocked)', () => {
     await runAgent(fakeClient as unknown as Anthropic, 'a plain single-turn question', BASE_SNAPSHOT);
 
     expect(calls[0].messages).toEqual([{ role: 'user', content: 'a plain single-turn question' }]);
+  });
+
+  it('aggregates usage across every Anthropic call in a single agent run, not just the final one', async () => {
+    // Three real calls: two tool_use turns, then a final text answer — each with its
+    // own distinct input/output token counts, the way three separate Messages API
+    // responses genuinely would. This is the "one user question, multiple API calls"
+    // shape the whole usage feature exists for.
+    const responses = [
+      {
+        stop_reason: 'tool_use',
+        content: [{ type: 'tool_use', id: 'toolu_1', name: 'searchUsers', input: { query: 'katz' } }],
+        usage: USAGE(200, 15),
+        model: 'claude-sonnet-5',
+      },
+      {
+        stop_reason: 'tool_use',
+        content: [{ type: 'tool_use', id: 'toolu_2', name: 'getUserOrders', input: { userId: 3 } }],
+        usage: USAGE(310, 25),
+        model: 'claude-sonnet-5',
+      },
+      {
+        stop_reason: 'end_turn',
+        content: [{ type: 'text', text: 'Noam Katz has 3 orders totaling $655.00.', citations: [] }],
+        usage: USAGE(420, 60),
+        model: 'claude-sonnet-5',
+      },
+    ];
+    let callCount = 0;
+    const fakeClient = {
+      messages: {
+        stream: () => {
+          const response = responses[callCount++];
+          return { finalMessage: async () => response as Anthropic.Message };
+        },
+      },
+    };
+
+    const result = await runAgent(fakeClient as unknown as Anthropic, 'How much has Noam Katz spent?', BASE_SNAPSHOT);
+
+    expect(result.turns).toBe(3);
+    expect(result.usage).toEqual({
+      model: 'claude-sonnet-5',
+      apiCalls: 3,
+      inputTokens: 200 + 310 + 420,
+      outputTokens: 15 + 25 + 60,
+    });
+  });
+
+  it('does not count a tool-executing turn twice — apiCalls equals the number of Anthropic responses, not the number of tool calls', async () => {
+    // A single turn where the model requests two tools in parallel is still one
+    // Anthropic call — apiCalls must track responses, not tool_use blocks.
+    const responses = [
+      {
+        stop_reason: 'tool_use',
+        content: [
+          { type: 'tool_use', id: 'toolu_1', name: 'getUserOrders', input: { userId: 1 } },
+          { type: 'tool_use', id: 'toolu_2', name: 'getUserOrders', input: { userId: 2 } },
+        ],
+        usage: USAGE(500, 30),
+        model: 'claude-sonnet-5',
+      },
+      {
+        stop_reason: 'end_turn',
+        content: [{ type: 'text', text: 'Summary for both users.', citations: [] }],
+        usage: USAGE(200, 40),
+        model: 'claude-sonnet-5',
+      },
+    ];
+    let callCount = 0;
+    const fakeClient = {
+      messages: {
+        stream: () => {
+          const response = responses[callCount++];
+          return { finalMessage: async () => response as Anthropic.Message };
+        },
+      },
+    };
+
+    const result = await runAgent(fakeClient as unknown as Anthropic, 'Compare two users', BASE_SNAPSHOT);
+
+    expect(result.trace).toHaveLength(2); // two tools called...
+    expect(result.usage.apiCalls).toBe(2); // ...across only two Anthropic calls
+    expect(result.usage.inputTokens).toBe(700);
+    expect(result.usage.outputTokens).toBe(70);
+  });
+});
+
+describe('getConfiguredModel', () => {
+  const ENV_KEY = 'BUSINESS_AGENT_MODEL';
+  const originalValue = process.env[ENV_KEY];
+
+  afterEach(() => {
+    if (originalValue === undefined) delete process.env[ENV_KEY];
+    else process.env[ENV_KEY] = originalValue;
+  });
+
+  it('defaults to claude-sonnet-5 when BUSINESS_AGENT_MODEL is unset', () => {
+    delete process.env[ENV_KEY];
+    expect(getConfiguredModel()).toBe('claude-sonnet-5');
+  });
+
+  it('uses BUSINESS_AGENT_MODEL when set', () => {
+    process.env[ENV_KEY] = 'claude-opus-4-8';
+    expect(getConfiguredModel()).toBe('claude-opus-4-8');
+  });
+
+  it('reads the env var live rather than a value frozen at module-import time — this module was already ' +
+    'imported at the top of this file, well before this test sets the var, and .env-loading via loadEnv() ' +
+    'only runs even later than that, inside the isMain block; a frozen module-level constant would miss both', () => {
+    delete process.env[ENV_KEY];
+    expect(getConfiguredModel()).toBe('claude-sonnet-5');
+    process.env[ENV_KEY] = 'claude-opus-4-8';
+    expect(getConfiguredModel()).toBe('claude-opus-4-8');
+  });
+});
+
+describe('runAgent — model selection', () => {
+  const ENV_KEY = 'BUSINESS_AGENT_MODEL';
+  const originalValue = process.env[ENV_KEY];
+
+  afterEach(() => {
+    if (originalValue === undefined) delete process.env[ENV_KEY];
+    else process.env[ENV_KEY] = originalValue;
+  });
+
+  it('defaults to claude-sonnet-5 when BUSINESS_AGENT_MODEL is unset', async () => {
+    delete process.env[ENV_KEY];
+    const calls: Anthropic.MessageCreateParams[] = [];
+    const fakeClient = {
+      messages: {
+        stream: (params: Anthropic.MessageCreateParams) => {
+          calls.push(params);
+          return {
+            finalMessage: async () =>
+              ({
+                stop_reason: 'end_turn',
+                content: [{ type: 'text', text: 'ok', citations: [] }],
+                usage: USAGE(1, 1),
+                model: 'claude-sonnet-5',
+              }) as Anthropic.Message,
+          };
+        },
+      },
+    };
+
+    const result = await runAgent(fakeClient as unknown as Anthropic, 'q', BASE_SNAPSHOT);
+
+    expect(calls[0].model).toBe('claude-sonnet-5');
+    expect(result.usage.model).toBe('claude-sonnet-5');
+  });
+
+  it('uses BUSINESS_AGENT_MODEL when set', async () => {
+    process.env[ENV_KEY] = 'claude-opus-4-8';
+    const calls: Anthropic.MessageCreateParams[] = [];
+    const fakeClient = {
+      messages: {
+        stream: (params: Anthropic.MessageCreateParams) => {
+          calls.push(params);
+          return {
+            finalMessage: async () =>
+              ({
+                stop_reason: 'end_turn',
+                content: [{ type: 'text', text: 'ok', citations: [] }],
+                usage: USAGE(1, 1),
+                model: 'claude-opus-4-8',
+              }) as Anthropic.Message,
+          };
+        },
+      },
+    };
+
+    await runAgent(fakeClient as unknown as Anthropic, 'q', BASE_SNAPSHOT);
+
+    expect(calls[0].model).toBe('claude-opus-4-8');
+  });
+
+  it('resolves the model once per run and reuses it for every turn, even if BUSINESS_AGENT_MODEL changes mid-run', async () => {
+    process.env[ENV_KEY] = 'claude-opus-4-8';
+    const calls: Anthropic.MessageCreateParams[] = [];
+    const responses = [
+      {
+        stop_reason: 'tool_use',
+        content: [{ type: 'tool_use', id: 'toolu_1', name: 'getUserOrders', input: { userId: 1 } }],
+        usage: USAGE(50, 10),
+        model: 'claude-opus-4-8',
+      },
+      {
+        stop_reason: 'end_turn',
+        content: [{ type: 'text', text: 'done', citations: [] }],
+        usage: USAGE(60, 20),
+        model: 'claude-opus-4-8',
+      },
+    ];
+    const fakeClient = {
+      messages: {
+        stream: (params: Anthropic.MessageCreateParams) => {
+          calls.push(params);
+          // Simulate the env var changing mid-run (e.g. a concurrent request
+          // mutating shared process.env) — this run must not pick it up mid-flight.
+          if (calls.length === 1) process.env[ENV_KEY] = 'claude-sonnet-5';
+          return { finalMessage: async () => responses[calls.length - 1] as Anthropic.Message };
+        },
+      },
+    };
+
+    await runAgent(fakeClient as unknown as Anthropic, 'q', BASE_SNAPSHOT);
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0].model).toBe('claude-opus-4-8');
+    expect(calls[1].model).toBe('claude-opus-4-8'); // unchanged on turn 2 despite the mid-run env mutation
+  });
+});
+
+describe('estimateCostUsd', () => {
+  it('computes cost from the standard per-million-token price of a known model', () => {
+    const cost = estimateCostUsd({ model: 'claude-sonnet-5', inputTokens: 1_000_000, outputTokens: 1_000_000 });
+    expect(cost).toBeCloseTo(2.0 + 10.0, 6); // $2/MTok in, $10/MTok out
+  });
+
+  it('scales linearly with partial-million token counts', () => {
+    const cost = estimateCostUsd({ model: 'claude-sonnet-5', inputTokens: 500_000, outputTokens: 250_000 });
+    expect(cost).toBeCloseTo(1.0 + 2.5, 6);
+  });
+
+  it('prices claude-opus-4-8 independently from claude-sonnet-5', () => {
+    const cost = estimateCostUsd({ model: 'claude-opus-4-8', inputTokens: 1_000_000, outputTokens: 1_000_000 });
+    expect(cost).toBeCloseTo(5.0 + 25.0, 6);
+  });
+
+  it('returns null (never a silently wrong number) for a model with no pricing entry', () => {
+    const cost = estimateCostUsd({ model: 'some-future-unpriced-model', inputTokens: 1000, outputTokens: 1000 });
+    expect(cost).toBeNull();
+  });
+
+  it('returns zero cost for zero usage on a known model, not null', () => {
+    const cost = estimateCostUsd({ model: 'claude-sonnet-5', inputTokens: 0, outputTokens: 0 });
+    expect(cost).toBe(0);
   });
 });

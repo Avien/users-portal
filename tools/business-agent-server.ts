@@ -40,17 +40,46 @@ import { applyCors } from './cors.mjs';
 //   curl -s localhost:8787/api/business-agent -X POST \
 //     -H 'content-type: application/json' \
 //     -d '{"prompt":"Which users need attention based on recent high-value orders?"}'
+//
+//   BUSINESS_AGENT_MODEL=...        override the runtime model (default: claude-sonnet-5)
+//   BUSINESS_AGENT_USAGE_LOG=1      log aggregated per-query token usage/cost to the
+//                                   console (dev-only telemetry, opt-in — see isMain below)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const MODEL = 'claude-opus-4-8';
+const DEFAULT_MODEL = 'claude-sonnet-5';
 const MAX_TURNS = 8;
 const PORT = Number(process.env['PORT'] ?? 8787);
+
+// ── Usage/cost telemetry (dev-only, see the isMain block below) ──
+// USD per million tokens, standard list price. Centralized and keyed by model so
+// switching BUSINESS_AGENT_MODEL to an unpriced model fails loud (estimateCostUsd
+// returns null) instead of silently mis-pricing.
+const MODEL_PRICING_USD_PER_MTOK: Record<string, { input: number; output: number }> = {
+  'claude-sonnet-5': { input: 2.0, output: 10.0 },
+  'claude-opus-4-8': { input: 5.0, output: 25.0 },
+};
+
+// Server-side only — no widget/env plumbing needed on the client side to change models.
+// A function, not a frozen module-level constant: loadEnv() (below) only runs inside the
+// isMain block, after this module's top-level consts have already been evaluated — so a
+// frozen `const MODEL = process.env[...] || DEFAULT_MODEL` would permanently miss a
+// BUSINESS_AGENT_MODEL supplied only via the repo's .env file (only an already-exported
+// shell env var would have been visible in time). Reading process.env live on every call
+// sidesteps that ordering entirely, and still lets already-exported shell vars win, since
+// loadEnv() never overwrites a value that's already set.
+export function getConfiguredModel(): string {
+  return process.env['BUSINESS_AGENT_MODEL'] || DEFAULT_MODEL;
+}
 
 // Local-dev fallback only — production must set ORDERS_API_URL explicitly to a
 // real deployed backend's snapshot endpoint (see docs/roadmap.md Phase 4).
 const DEFAULT_ORDERS_SNAPSHOT_URL = 'http://localhost:3000/api/orders-snapshot';
-const ORDERS_SNAPSHOT_URL = process.env['ORDERS_API_URL'] || DEFAULT_ORDERS_SNAPSHOT_URL;
+
+// Same env-loading-order rationale as getConfiguredModel() above.
+function getOrdersSnapshotUrl(): string {
+  return process.env['ORDERS_API_URL'] || DEFAULT_ORDERS_SNAPSHOT_URL;
+}
 
 // Same dependency-free .env loader as tools/agent.mjs and tools/pr-review-agent.mjs.
 const loadEnv = () => {
@@ -121,11 +150,12 @@ export function sanitizeHistory(value: unknown): ConversationMessage[] {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function fetchOrdersSnapshot(): Promise<OrdersSnapshot> {
+  const url = getOrdersSnapshotUrl();
   const retryDelaysMs = [250, 500];
   let lastError: unknown;
   for (let attempt = 0; attempt <= retryDelaysMs.length; attempt++) {
     try {
-      const res = await fetch(ORDERS_SNAPSHOT_URL);
+      const res = await fetch(url);
       if (!res.ok) throw new Error(`Orders snapshot request failed (${res.status})`);
       return (await res.json()) as OrdersSnapshot;
     } catch (err) {
@@ -135,7 +165,7 @@ export async function fetchOrdersSnapshot(): Promise<OrdersSnapshot> {
   }
   const reason = lastError instanceof Error ? lastError.message : String(lastError);
   throw new Error(
-    `Orders data source unavailable at ${ORDERS_SNAPSHOT_URL} — is "npm run mock:ws" running? (${reason})`
+    `Orders data source unavailable at ${url} — is "npm run mock:ws" running? (${reason})`
   );
 }
 
@@ -223,6 +253,24 @@ export const tools = {
 
 export type ToolName = keyof typeof tools;
 
+// ── Per-user-query usage telemetry — one user question can drive multiple Anthropic
+// Messages API calls via the tool-use loop below; this aggregates across all of them
+// into one figure for the whole Ask action, never per-call. Dev-only, server-side only —
+// never part of the public HTTP response (see the isMain block). ──
+
+export interface AgentUsage {
+  model: string;
+  apiCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export function estimateCostUsd(usage: Pick<AgentUsage, 'model' | 'inputTokens' | 'outputTokens'>): number | null {
+  const pricing = MODEL_PRICING_USD_PER_MTOK[usage.model];
+  if (!pricing) return null;
+  return (usage.inputTokens / 1_000_000) * pricing.input + (usage.outputTokens / 1_000_000) * pricing.output;
+}
+
 const SYSTEM_PROMPT = `You are a business-data assistant for the Users Portal application. You answer
 natural-language questions about users and their orders by calling the read-only tools provided —
 never guess or fabricate user names, order totals, or ids. Call searchUsers first when you don't
@@ -262,10 +310,22 @@ export const runAgent = async (
   const toolDefs = Object.values(tools).map((t) => t.definition);
   const trace: { name: string; input: unknown }[] = [];
 
+  // Resolved once per run, not re-read per turn — every call in this run's tool-use
+  // loop must use the same model a client could have overridden mid-run otherwise.
+  const model = getConfiguredModel();
+
+  // One user question can drive several Anthropic calls below (one per turn of the
+  // tool-use loop) — accumulated here into a single usage figure for the whole run,
+  // never reported per-call. Seeded with the model this run was configured to use;
+  // each turn below then overwrites it with the actual serving model from that
+  // response (identical today — no fallback/retry-on-different-model logic exists —
+  // but reading it from the response is the more correct source of truth).
+  const usage: AgentUsage = { model, apiCalls: 0, inputTokens: 0, outputTokens: 0 };
+
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     const message = await client.messages
       .stream({
-        model: MODEL,
+        model,
         max_tokens: 4096,
         thinking: { type: 'adaptive' },
         system: SYSTEM_PROMPT,
@@ -273,6 +333,11 @@ export const runAgent = async (
         messages,
       })
       .finalMessage();
+
+    usage.apiCalls += 1;
+    usage.inputTokens += message.usage.input_tokens;
+    usage.outputTokens += message.usage.output_tokens;
+    usage.model = message.model;
 
     messages.push({ role: 'assistant', content: message.content });
 
@@ -282,7 +347,7 @@ export const runAgent = async (
         .map((b) => b.text)
         .join('\n')
         .trim();
-      return { answer, trace, turns: turn + 1 };
+      return { answer, trace, turns: turn + 1, usage };
     }
 
     const toolUses = message.content.filter((b) => b.type === 'tool_use');
@@ -293,7 +358,7 @@ export const runAgent = async (
     messages.push({ role: 'user', content: results });
   }
 
-  return { answer: '(hit MAX_TURNS without a final answer)', trace, turns: MAX_TURNS };
+  return { answer: '(hit MAX_TURNS without a final answer)', trace, turns: MAX_TURNS, usage };
 };
 
 // ── Minimal HTTP boundary — no framework, no auth, no persistence (Phase 1 scope) ──
@@ -340,11 +405,23 @@ if (isMain) {
         const conversationHistory = sanitizeHistory(history);
         console.log(`\n→ prompt: "${prompt}"${conversationHistory.length ? ` (+${conversationHistory.length} history msgs)` : ''}`);
         const snapshot = await fetchOrdersSnapshot();
-        const result = await runAgent(client, prompt, snapshot, conversationHistory);
+        const { usage, ...result } = await runAgent(client, prompt, snapshot, conversationHistory);
         for (const call of result.trace) {
           console.log(`  ● ${call.name}(${JSON.stringify(call.input)})`);
         }
         console.log(`  ✓ answer (${result.turns} turn${result.turns === 1 ? '' : 's'}): ${result.answer}\n`);
+        if (process.env['BUSINESS_AGENT_USAGE_LOG'] === '1') {
+          const costUsd = estimateCostUsd(usage);
+          console.log(
+            `[Business Agent Usage]\n` +
+              `model: ${usage.model}\n` +
+              `apiCalls: ${usage.apiCalls}\n` +
+              `turns: ${result.turns}\n` +
+              `inputTokens: ${usage.inputTokens}\n` +
+              `outputTokens: ${usage.outputTokens}\n` +
+              `estimatedCostUsd: ${costUsd === null ? 'unknown' : costUsd.toFixed(6)}\n`
+          );
+        }
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify(result, null, 2));
       } catch (err) {
