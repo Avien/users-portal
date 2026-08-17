@@ -98,7 +98,7 @@ const viewportStyle: CSSProperties = {
   height: VIEWPORT_HEIGHT,
   display: 'flex',
   flexDirection: 'column',
-  justifyContent: 'center', // centers loading/empty/error text; no effect on the list, which already fills the box
+  justifyContent: 'flex-start', // top-aligns loading/empty/error text; no effect on the list, which already fills the box
 };
 
 const listStyle: CSSProperties = {

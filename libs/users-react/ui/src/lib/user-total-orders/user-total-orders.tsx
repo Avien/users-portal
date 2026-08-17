@@ -9,7 +9,9 @@ export const UserTotalOrders = memo(function UserTotalOrders({ totalAmount }: Us
   return (
     <div style={cardStyle}>
       <span style={labelStyle}>Total orders</span>
-      <strong style={valueStyle}>${totalAmount.toFixed(2)}</strong>
+      <strong style={valueStyle}>
+        ${totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+      </strong>
     </div>
   );
 });

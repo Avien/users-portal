@@ -21,8 +21,15 @@ import { applyCors } from './cors.mjs';
 // Claude tool-use loop shape as tools/agent.mjs, but with a small set of
 // READ-ONLY business tools over the existing Users/Orders domain instead of
 // the dev-facing scaffold/edit/validate tools. No UI, no streaming to the
-// caller, no conversation history, no persistence — this only proves the
-// agent loop can answer a real multi-tool business question end to end.
+// caller, no persistence — this only proves the agent loop can answer a real
+// multi-tool business question end to end.
+//
+// The server itself stays stateless between requests — the widget supplies a
+// short, bounded conversation history on each call (see ConversationMessage /
+// sanitizeHistory below) purely so Claude can resolve references like "his" or
+// "she" across turns. Every request still fetches a fresh canonical snapshot
+// (below), so a follow-up question always reasons over current business state,
+// never a frozen answer from an earlier turn in the conversation.
 //
 // Orders are read from the canonical store (tools/orders-store.mjs, served by
 // tools/mock-orders-ws-server.mjs) as one atomic snapshot per incoming request
@@ -72,6 +79,43 @@ const loadEnv = () => {
 export interface OrdersSnapshot {
   orders: Order[];
   arrivals: Record<number, number>;
+}
+
+// ── Multi-turn conversation context — short-lived, client-supplied, never persisted.
+// The widget (libs/business-agent-widget) owns and bounds this to 6 messages on its
+// side; sanitizeHistory() re-validates and re-bounds it here too, strictly (discards
+// invalid entries rather than coercing them), since a request body is untrusted input
+// regardless of what a well-behaved client sends. ──
+
+export interface ConversationMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+const MAX_HISTORY_MESSAGES = 6;
+// Generous for a verbose business answer (the longest real answers seen so far are a
+// few hundred characters), but bounded so a client can't inflate the Claude request
+// with implausibly large content. Entries over the cap are discarded outright, not
+// truncated — a truncated mid-sentence fragment could confuse Claude more than a
+// dropped turn, and truncation would also be a form of coercion this sanitizer is
+// deliberately avoiding elsewhere.
+const MAX_HISTORY_MESSAGE_LENGTH = 2000;
+
+function isConversationMessage(value: unknown): value is ConversationMessage {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Partial<ConversationMessage>;
+  return (
+    (candidate.role === 'user' || candidate.role === 'assistant') &&
+    typeof candidate.content === 'string' &&
+    candidate.content.length > 0 &&
+    candidate.content.length <= MAX_HISTORY_MESSAGE_LENGTH
+  );
+}
+
+export function sanitizeHistory(value: unknown): ConversationMessage[] {
+  if (!Array.isArray(value)) return [];
+  const valid = value.filter(isConversationMessage);
+  return valid.slice(-MAX_HISTORY_MESSAGES);
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -208,9 +252,13 @@ export const dispatch = (block: Anthropic.ToolUseBlock, snapshot: OrdersSnapshot
 export const runAgent = async (
   client: Pick<Anthropic, 'messages'>,
   prompt: string,
-  snapshot: OrdersSnapshot
+  snapshot: OrdersSnapshot,
+  history: ConversationMessage[] = []
 ) => {
-  const messages: Anthropic.MessageParam[] = [{ role: 'user', content: prompt }];
+  const messages: Anthropic.MessageParam[] = [
+    ...history.map((m): Anthropic.MessageParam => ({ role: m.role, content: m.content })),
+    { role: 'user', content: prompt },
+  ];
   const toolDefs = Object.values(tools).map((t) => t.definition);
   const trace: { name: string; input: unknown }[] = [];
 
@@ -283,15 +331,16 @@ if (isMain) {
     req.on('data', (chunk) => (body += chunk));
     req.on('end', async () => {
       try {
-        const { prompt } = JSON.parse(body || '{}');
+        const { prompt, history } = JSON.parse(body || '{}');
         if (!prompt || typeof prompt !== 'string') {
           res.writeHead(400, { 'content-type': 'application/json' });
           res.end(JSON.stringify({ error: '"prompt" (string) is required in the JSON body' }));
           return;
         }
-        console.log(`\n→ prompt: "${prompt}"`);
+        const conversationHistory = sanitizeHistory(history);
+        console.log(`\n→ prompt: "${prompt}"${conversationHistory.length ? ` (+${conversationHistory.length} history msgs)` : ''}`);
         const snapshot = await fetchOrdersSnapshot();
-        const result = await runAgent(client, prompt, snapshot);
+        const result = await runAgent(client, prompt, snapshot, conversationHistory);
         for (const call of result.trace) {
           console.log(`  ● ${call.name}(${JSON.stringify(call.input)})`);
         }

@@ -8,10 +8,16 @@
 // in tools/business-agent-server.ts).
 
 import { BUSINESS_AGENT_ANSWER_EVENT, BUSINESS_AGENT_ERROR_EVENT } from './business-agent-widget.events';
-import type { AgentAnswerEventDetail, AgentErrorEventDetail } from './business-agent-widget.events';
+import type { AgentAnswerEventDetail, AgentErrorEventDetail, ConversationMessage } from './business-agent-widget.events';
 
 const TAG_NAME = 'business-agent-widget';
 const DEFAULT_ENDPOINT = '/api/business-agent';
+
+// 3 user/assistant exchanges — enough for pronoun/follow-up resolution
+// ("his", "she", "that user"), not an attempt at long-term memory. Short-lived,
+// in-memory only (not localStorage/sessionStorage) — deliberately lost on
+// refresh, per the roadmap's explicit scope for this feature.
+const MAX_HISTORY_MESSAGES = 6;
 
 type AgentResponse = Omit<AgentAnswerEventDetail, 'prompt'>;
 
@@ -44,7 +50,15 @@ export class BusinessAgentWidget extends HTMLElement {
   private readonly form: HTMLFormElement;
   private readonly input: HTMLInputElement;
   private readonly submitButton: HTMLButtonElement;
-  private readonly resultEl: HTMLElement;
+  private readonly resetButton: HTMLButtonElement;
+  private readonly transcriptEl: HTMLElement;
+  private readonly statusEl: HTMLElement;
+
+  // Prior exchanges only — the in-flight prompt is never in here while its own
+  // request is pending, only appended after a successful answer. This is the
+  // single source of truth for both what gets POSTed as `history` and what the
+  // transcript below renders — no separate render-only copy of the conversation.
+  private history: ConversationMessage[] = [];
 
   constructor() {
     super();
@@ -52,9 +66,19 @@ export class BusinessAgentWidget extends HTMLElement {
     shadow.innerHTML = `
       <style>
         :host { display: block; font-family: system-ui, sans-serif; max-width: 32rem; }
-        form { display: flex; gap: 0.5rem; }
+        .header {
+          display: flex; justify-content: space-between; align-items: flex-start;
+          gap: 0.75rem; flex-wrap: wrap;
+          padding-bottom: 0.75rem; margin-bottom: 0.75rem; border-bottom: 1px solid #e5e7eb;
+        }
+        h2 { margin: 0 0 0.15rem; font-size: 1.1rem; }
+        .descriptor { margin: 0; font-size: 0.8rem; color: #6b7280; }
+        /* Composer stays above the transcript in both DOM order and layout, so its
+           vertical position never moves as the conversation grows — only the bounded,
+           independently-scrollable transcript below it grows/scrolls. */
+        form { display: flex; flex-wrap: wrap; gap: 0.5rem; }
         input {
-          flex: 1; padding: 0.5rem 0.75rem; border: 1px solid #ccc; border-radius: 6px;
+          flex: 1 1 12rem; padding: 0.5rem 0.75rem; border: 1px solid #ccc; border-radius: 6px;
           font: inherit;
         }
         button {
@@ -62,20 +86,46 @@ export class BusinessAgentWidget extends HTMLElement {
           background: #0f766e; color: white; font: inherit; cursor: pointer;
         }
         button:disabled { opacity: 0.6; cursor: default; }
-        .result { margin-top: 0.75rem; white-space: pre-wrap; line-height: 1.4; font-size: 0.95rem; }
-        .result[data-state='loading'] { color: #6b7280; }
-        .result[data-state='error'] { color: #b91c1c; }
+        button[data-variant='secondary'] {
+          background: transparent; color: #0f766e; border: 1px solid #0f766e;
+        }
+        .status { margin-top: 0.5rem; white-space: pre-wrap; line-height: 1.4; font-size: 0.95rem; }
+        .status:empty { display: none; }
+        .status[data-state='loading'] { color: #6b7280; }
+        .status[data-state='error'] { color: #b91c1c; }
+        .transcript {
+          display: flex; flex-direction: column; gap: 0.75rem;
+          margin-top: 0.75rem; padding: 0.75rem;
+          border: 1px solid #e5e7eb; border-radius: 8px;
+          max-height: 16rem; overflow-y: auto;
+        }
+        .transcript:empty { display: none; border: none; padding: 0; margin-top: 0; }
+        .message { margin: 0; }
+        .role-label { display: block; font-size: 0.75rem; font-weight: 600; margin-bottom: 0.15rem; }
+        .message[data-role='user'] .role-label { color: #0f766e; }
+        .message[data-role='assistant'] .role-label { color: #374151; }
+        .message-body { margin: 0; white-space: pre-wrap; line-height: 1.4; font-size: 0.95rem; }
       </style>
+      <div class="header">
+        <div>
+          <h2>LLM-Powered Business Agent</h2>
+          <p class="descriptor">Claude API · Tool calling · Multi-turn context</p>
+        </div>
+        <button type="button" class="reset-button" data-variant="secondary" aria-label="Start new conversation">Start new conversation</button>
+      </div>
       <form>
         <input type="text" placeholder="Ask a business question…" aria-label="Business question" required />
         <button type="submit">Ask</button>
       </form>
-      <div class="result" role="status"></div>
+      <div class="status" role="status"></div>
+      <div class="transcript" aria-live="polite"></div>
     `;
     this.form = shadow.querySelector('form') as HTMLFormElement;
     this.input = shadow.querySelector('input') as HTMLInputElement;
-    this.submitButton = shadow.querySelector('button') as HTMLButtonElement;
-    this.resultEl = shadow.querySelector('.result') as HTMLElement;
+    this.submitButton = shadow.querySelector('button[type="submit"]') as HTMLButtonElement;
+    this.resetButton = shadow.querySelector('.reset-button') as HTMLButtonElement;
+    this.transcriptEl = shadow.querySelector('.transcript') as HTMLElement;
+    this.statusEl = shadow.querySelector('.status') as HTMLElement;
   }
 
   // Read live from the attribute (not cached) — the widget stays in sync if a
@@ -101,10 +151,12 @@ export class BusinessAgentWidget extends HTMLElement {
 
   connectedCallback() {
     this.form.addEventListener('submit', this.handleSubmit);
+    this.resetButton.addEventListener('click', this.handleReset);
   }
 
   disconnectedCallback() {
     this.form.removeEventListener('submit', this.handleSubmit);
+    this.resetButton.removeEventListener('click', this.handleReset);
   }
 
   private readonly handleSubmit = async (event: SubmitEvent) => {
@@ -113,14 +165,14 @@ export class BusinessAgentWidget extends HTMLElement {
     if (!prompt) return;
 
     this.submitButton.disabled = true;
-    this.resultEl.dataset['state'] = 'loading';
-    this.resultEl.textContent = 'Thinking…';
+    this.statusEl.dataset['state'] = 'loading';
+    this.statusEl.textContent = 'Thinking…';
 
     try {
       const res = await fetch(this.endpoint, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, history: this.history }),
       });
       const body = await res.json();
       if (!res.ok) {
@@ -138,8 +190,24 @@ export class BusinessAgentWidget extends HTMLElement {
   };
 
   private renderAnswer(response: AgentResponse, prompt: string) {
-    this.resultEl.dataset['state'] = 'answer';
-    this.resultEl.textContent = response.answer;
+    // Only a successful exchange extends history — a failed request never
+    // reaches this method, so it can't leave a dangling user turn with no reply.
+    const updatedHistory: ConversationMessage[] = [
+      ...this.history,
+      { role: 'user', content: prompt },
+      { role: 'assistant', content: response.answer },
+    ];
+    this.history = updatedHistory.slice(-MAX_HISTORY_MESSAGES);
+    this.renderTranscript();
+    // Reveal the newest exchange by scrolling the bounded transcript panel itself,
+    // not the host page — the composer above it must never move to bring an answer
+    // into view.
+    this.transcriptEl.scrollTop = this.transcriptEl.scrollHeight;
+    // Only on success — a failed request leaves the prompt in place so the
+    // user can retry or edit it instead of retyping from scratch.
+    this.input.value = '';
+    delete this.statusEl.dataset['state'];
+    this.statusEl.textContent = '';
     this.dispatchEvent(
       new CustomEvent<AgentAnswerEventDetail>(BUSINESS_AGENT_ANSWER_EVENT, {
         detail: { prompt, ...response },
@@ -150,8 +218,10 @@ export class BusinessAgentWidget extends HTMLElement {
   }
 
   private renderError(message: string, prompt: string) {
-    this.resultEl.dataset['state'] = 'error';
-    this.resultEl.textContent = message;
+    // History is untouched — a failed exchange never joins the transcript, so
+    // it can't be replayed back to Claude as if it were a real prior answer.
+    this.statusEl.dataset['state'] = 'error';
+    this.statusEl.textContent = message;
     this.dispatchEvent(
       new CustomEvent<AgentErrorEventDetail>(BUSINESS_AGENT_ERROR_EVENT, {
         detail: { prompt, error: message },
@@ -160,6 +230,39 @@ export class BusinessAgentWidget extends HTMLElement {
       })
     );
   }
+
+  // Renders `this.history` (the same array sent as `history` in the POST body)
+  // as a plain You/Agent transcript — textContent only, never innerHTML, so a
+  // malicious model answer can't inject markup (see the widget's XSS tests).
+  // No tool trace is rendered here; that stays DEV-console-only in host apps.
+  private renderTranscript() {
+    this.transcriptEl.replaceChildren(
+      ...this.history.map((message) => {
+        const row = document.createElement('div');
+        row.className = 'message';
+        row.dataset['role'] = message.role;
+        const label = document.createElement('span');
+        label.className = 'role-label';
+        label.textContent = message.role === 'user' ? 'You' : 'Agent';
+        const body = document.createElement('p');
+        body.className = 'message-body';
+        body.textContent = message.content;
+        row.append(label, body);
+        return row;
+      })
+    );
+  }
+
+  // Local-only reset: no server call, no effect on canonical Orders/WS state.
+  // Bound as a class field (not a prototype method) so add/removeEventListener
+  // in connected/disconnectedCallback reference the same function identity.
+  private readonly handleReset = () => {
+    this.history = [];
+    this.renderTranscript();
+    this.input.value = '';
+    delete this.statusEl.dataset['state'];
+    this.statusEl.textContent = '';
+  };
 }
 
 // Guards against double-registration when multiple bundles land on one page

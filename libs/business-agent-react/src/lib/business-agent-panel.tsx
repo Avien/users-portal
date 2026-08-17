@@ -37,10 +37,5 @@ export function BusinessAgentPanel() {
     };
   }, []);
 
-  return (
-    <div>
-      <h2>Business Agent</h2>
-      <business-agent-widget ref={widgetRef} endpoint={import.meta.env['VITE_BUSINESS_AGENT_ENDPOINT']} />
-    </div>
-  );
+  return <business-agent-widget ref={widgetRef} endpoint={import.meta.env['VITE_BUSINESS_AGENT_ENDPOINT']} />;
 }
