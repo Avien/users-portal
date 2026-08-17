@@ -15,7 +15,9 @@
     "skipDefaultLibCheck": true,
     "baseUrl": ".",
     "paths": {
+      "@portal/business-agent-angular": ["libs/business-agent-angular/src/index.ts"],
       "@portal/business-agent-react": ["libs/business-agent-react/src/index.ts"],
+      "@portal/business-agent-vue": ["libs/business-agent-vue/src/index.ts"],
       "@portal/business-agent-widget": ["libs/business-agent-widget/src/index.ts"],
       "@portal/platform": ["libs/platform/src/index.ts"],
       "@portal/users-angular/data-access": ["libs/users-angular/data-access/src/index.ts"],

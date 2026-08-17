@@ -2,20 +2,20 @@ import { Route } from '@angular/router';
 import {
   autoSelectUserGuard,
   selectUserResolver,
-  UserOrdersComponent,
 } from '@portal/users-angular/feature';
 import { ReactWrapperComponent } from './react-wrapper/react-wrapper.component';
+import { UsersPageComponent } from './users-page/users-page.component';
 
 export const appRoutes: Route[] = [
   {
     path: 'users/:userId',
-    component: UserOrdersComponent,
+    component: UsersPageComponent,
     resolve: { _: selectUserResolver },
   },
   {
     path: 'users',
     canActivate: [autoSelectUserGuard],
-    component: UserOrdersComponent,
+    component: UsersPageComponent,
   },
   {
     path: 'hybrid',

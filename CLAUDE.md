@@ -70,8 +70,9 @@ These interfaces are the single source of truth for both Angular and React:
 ## npm Scripts
 
 ```bash
-npm run start:angular      # serve Angular app (http://localhost:4200)
+npm run start:angular      # serve Angular app (http://localhost:4200) + WS mock + local Business Agent server, in parallel via concurrently
 npm run start:react        # serve React app (http://localhost:4201) + WS mock + local Business Agent server, in parallel via concurrently
+npm run start:vue          # serve Vue app (http://localhost:4202) + WS mock + local Business Agent server, in parallel via concurrently
 npm run start:shell        # serve vanilla JS shell (http://localhost:4000)
 npm run mock:ws            # start local WS mock server at ws://localhost:3000/orders (standalone; bundled into start:react already)
 npm run business-agent     # start the local Business Agent server at http://localhost:8787 (standalone; bundled into start:react already)
