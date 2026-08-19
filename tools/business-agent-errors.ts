@@ -1,6 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { OrdersSnapshotError, RequestValidationError } from './business-agent-core.ts';
-import { BodyTooLargeError } from './business-agent-http.ts';
+// Extensionless relative imports — this file is bundled by Vercel's builder as
+// part of api/business-agent.ts's dependency graph; see the comment there for
+// why (a real Preview deployment failure, not a style choice).
+import { OrdersSnapshotError, RequestValidationError } from './business-agent-core';
+import { BodyTooLargeError } from './business-agent-http';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Maps any error thrown while handling a /api/business-agent request to a

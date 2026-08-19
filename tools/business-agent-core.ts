@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { Order } from '../libs/users/src/index.ts';
+import type { Order } from '../libs/users/src/index';
 import {
   MOCK_USERS,
   getOrdersByUserId,
@@ -8,7 +8,7 @@ import {
   isSecondOrderWithinBurstWindow,
   ORDER_BURST_WINDOW_MS,
   SUSPICIOUS_ORDER_TOTAL_THRESHOLD,
-} from '../libs/users/src/index.ts';
+} from '../libs/users/src/index';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Product-Facing Business AI Agent — pure, transport-agnostic core (see
@@ -17,6 +17,12 @@ import {
 // (tools/business-agent-server.ts) and the production serverless handler
 // (api/business-agent.ts) import and call identically. Phase 4 split this out of
 // what used to be one file mixing pure logic with the local dev HTTP adapter.
+//
+// This file's own relative imports are deliberately EXTENSIONLESS (unlike most
+// of tools/*.ts) because it is bundled by Vercel's builder as part of
+// api/business-agent.ts's dependency graph, in addition to being run directly
+// via `tsx` for local dev — see the comment in api/business-agent.ts for the
+// full explanation (a real Preview deployment failure, not a style choice).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const DEFAULT_MODEL = 'claude-sonnet-5';

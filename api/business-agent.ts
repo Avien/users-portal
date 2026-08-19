@@ -5,9 +5,24 @@ import {
   parseAgentRequestBody,
   runAgent,
   formatUsageLog,
-} from '../tools/business-agent-core.ts';
-import { readRequestBody, isJsonContentType, MAX_BODY_BYTES } from '../tools/business-agent-http.ts';
-import { mapErrorToResponse } from '../tools/business-agent-errors.ts';
+} from '../tools/business-agent-core';
+import { readRequestBody, isJsonContentType, MAX_BODY_BYTES } from '../tools/business-agent-http';
+import { mapErrorToResponse } from '../tools/business-agent-errors';
+
+// The three imports above are deliberately EXTENSIONLESS, unlike most of
+// tools/*.ts (which uses explicit .ts extensions because those files run
+// directly via `tsx`, whose underlying Node ESM loader needs a full specifier).
+// This file is bundled by Vercel's own builder instead — the same requirement
+// every Vite-bundled file in this repo already follows (e.g.
+// libs/business-agent-widget's internal imports). An explicit `.ts` extension
+// here survives untranspiled into the compiled output as a literal
+// require("...ts"), which Vercel's bundler does not trace/inline and Node
+// cannot resolve at runtime — this broke a real Preview deployment
+// ("Cannot find module '../tools/business-agent-core.ts'") before this fix.
+// tools/business-agent-core.ts, tools/business-agent-errors.ts, and this file
+// are the only three files that sit at this local-tsx/Vercel-bundle
+// intersection, so they're the only ones using extensionless relative imports
+// within the business-agent-* family.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Production serverless handler for POST /api/business-agent (Phase 4 — see
