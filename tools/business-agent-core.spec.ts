@@ -8,9 +8,14 @@ import {
   sanitizeHistory,
   estimateCostUsd,
   getConfiguredModel,
+  parseAgentRequestBody,
+  RequestValidationError,
+  MAX_PROMPT_LENGTH,
+  MAX_OUTPUT_TOKENS,
+  SDK_MAX_RETRIES,
   type OrdersSnapshot,
   type ConversationMessage,
-} from './business-agent-server.ts';
+} from './business-agent-core.ts';
 
 // Every fake Anthropic response in this file needs a `usage` + `model` field —
 // the real SDK always returns both, and runAgent now reads message.usage.input_tokens
@@ -187,8 +192,8 @@ describe('fetchOrdersSnapshot — ORDERS_API_URL resolution', () => {
 
   it('fetches from ORDERS_API_URL when set — proves the URL is resolved live on each call, not frozen at ' +
     'module-import time (this module was already imported at the top of this file, well before this env ' +
-    'var was set here, and .env-loading via loadEnv() only runs even later than that, inside the isMain ' +
-    'block; a frozen module-level constant would have missed both)', async () => {
+    'var was set here, and .env-loading via the dev adapter\'s loadEnv() only runs even later than that; a ' +
+    'frozen module-level constant would have missed both)', async () => {
     process.env[ENV_KEY] = 'http://example.internal/orders-snapshot';
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ orders: [], arrivals: {} }) });
     vi.stubGlobal('fetch', fetchMock);
@@ -251,6 +256,70 @@ describe('sanitizeHistory', () => {
     expect(result).toHaveLength(6);
     expect(result[0].content).toBe('message 4');
     expect(result[5].content).toBe('message 9');
+  });
+});
+
+describe('parseAgentRequestBody', () => {
+  it('parses a valid prompt with no history', () => {
+    const payload = parseAgentRequestBody(JSON.stringify({ prompt: 'How much has Dana spent?' }));
+    expect(payload).toEqual({ prompt: 'How much has Dana spent?', history: [] });
+  });
+
+  it('parses a valid prompt with history, delegating to sanitizeHistory', () => {
+    const payload = parseAgentRequestBody(
+      JSON.stringify({
+        prompt: 'What was his last order?',
+        history: [
+          { role: 'user', content: 'How much has Noam spent?' },
+          { role: 'assistant', content: 'Noam has spent $655.00.' },
+          { role: 'system', content: 'discarded — invalid role' },
+        ],
+      })
+    );
+    expect(payload).toEqual({
+      prompt: 'What was his last order?',
+      history: [
+        { role: 'user', content: 'How much has Noam spent?' },
+        { role: 'assistant', content: 'Noam has spent $655.00.' },
+      ],
+    });
+  });
+
+  it('throws RequestValidationError for malformed JSON, without leaking the parser\'s own message', () => {
+    expect(() => parseAgentRequestBody('{not json')).toThrow(RequestValidationError);
+    expect(() => parseAgentRequestBody('{not json')).toThrow('Request body must be valid JSON.');
+  });
+
+  it('throws RequestValidationError when the body is valid JSON but not an object', () => {
+    expect(() => parseAgentRequestBody('"just a string"')).toThrow(RequestValidationError);
+    expect(() => parseAgentRequestBody('42')).toThrow(RequestValidationError);
+    expect(() => parseAgentRequestBody('null')).toThrow(RequestValidationError);
+  });
+
+  it('throws RequestValidationError when prompt is missing', () => {
+    expect(() => parseAgentRequestBody('{}')).toThrow(RequestValidationError);
+  });
+
+  it('throws RequestValidationError when prompt is not a string', () => {
+    expect(() => parseAgentRequestBody(JSON.stringify({ prompt: 42 }))).toThrow(RequestValidationError);
+  });
+
+  it('throws RequestValidationError for an empty prompt', () => {
+    expect(() => parseAgentRequestBody(JSON.stringify({ prompt: '' }))).toThrow(RequestValidationError);
+  });
+
+  it('throws RequestValidationError for a whitespace-only prompt', () => {
+    expect(() => parseAgentRequestBody(JSON.stringify({ prompt: '   \n\t  ' }))).toThrow(RequestValidationError);
+  });
+
+  it('accepts a prompt exactly at MAX_PROMPT_LENGTH', () => {
+    const prompt = 'x'.repeat(MAX_PROMPT_LENGTH);
+    expect(parseAgentRequestBody(JSON.stringify({ prompt }))).toEqual({ prompt, history: [] });
+  });
+
+  it('throws RequestValidationError for a prompt exceeding MAX_PROMPT_LENGTH', () => {
+    const prompt = 'x'.repeat(MAX_PROMPT_LENGTH + 1);
+    expect(() => parseAgentRequestBody(JSON.stringify({ prompt }))).toThrow(RequestValidationError);
   });
 });
 
@@ -503,6 +572,89 @@ describe('runAgent orchestration (Claude API mocked)', () => {
     expect(result.usage.inputTokens).toBe(700);
     expect(result.usage.outputTokens).toBe(70);
   });
+
+  it('calls stream() with the right-sized max_tokens and the explicit SDK_MAX_RETRIES, not the SDK default', async () => {
+    const calls: [Anthropic.MessageCreateParams, Anthropic.RequestOptions | undefined][] = [];
+    const fakeClient = {
+      messages: {
+        stream: (params: Anthropic.MessageCreateParams, options?: Anthropic.RequestOptions) => {
+          calls.push([params, options]);
+          return {
+            finalMessage: async () =>
+              ({
+                stop_reason: 'end_turn',
+                content: [{ type: 'text', text: 'ok', citations: [] }],
+                usage: USAGE(1, 1),
+                model: 'claude-sonnet-5',
+              }) as Anthropic.Message,
+          };
+        },
+      },
+    };
+
+    await runAgent(fakeClient as unknown as Anthropic, 'q', BASE_SNAPSHOT);
+
+    expect(calls[0][0].max_tokens).toBe(MAX_OUTPUT_TOKENS);
+    expect(calls[0][0].max_tokens).toBeLessThan(4096); // explicitly smaller than the original unsized default
+    expect(calls[0][1]?.maxRetries).toBe(SDK_MAX_RETRIES);
+  });
+
+  it('threads one shared AbortSignal through every stream() call in the run', async () => {
+    const controller = new AbortController();
+    const signals: (AbortSignal | undefined)[] = [];
+    const responses = [
+      {
+        stop_reason: 'tool_use',
+        content: [{ type: 'tool_use', id: 'toolu_1', name: 'getUserOrders', input: { userId: 1 } }],
+        usage: USAGE(10, 5),
+        model: 'claude-sonnet-5',
+      },
+      {
+        stop_reason: 'end_turn',
+        content: [{ type: 'text', text: 'done', citations: [] }],
+        usage: USAGE(10, 5),
+        model: 'claude-sonnet-5',
+      },
+    ];
+    let callCount = 0;
+    const fakeClient = {
+      messages: {
+        stream: (_params: Anthropic.MessageCreateParams, options?: Anthropic.RequestOptions) => {
+          signals.push(options?.signal ?? undefined);
+          const response = responses[callCount++];
+          return { finalMessage: async () => response as Anthropic.Message };
+        },
+      },
+    };
+
+    await runAgent(fakeClient as unknown as Anthropic, 'q', BASE_SNAPSHOT, [], { signal: controller.signal });
+
+    expect(signals).toHaveLength(2);
+    expect(signals[0]).toBe(controller.signal);
+    expect(signals[1]).toBe(controller.signal); // same object across turns, not a fresh one per turn
+  });
+
+  it('propagates an abort from the underlying client when the shared signal fires, rather than swallowing it', async () => {
+    // Mirrors what the real SDK does when the passed AbortSignal fires mid-request
+    // (throws Anthropic.APIUserAbortError from within finalMessage()) — runAgent
+    // must not catch/hide this; the HTTP boundary's error mapper is what turns it
+    // into a sanitized 504.
+    const controller = new AbortController();
+    controller.abort();
+    const fakeClient = {
+      messages: {
+        stream: () => ({
+          finalMessage: async () => {
+            throw new Anthropic.APIUserAbortError();
+          },
+        }),
+      },
+    };
+
+    await expect(
+      runAgent(fakeClient as unknown as Anthropic, 'q', BASE_SNAPSHOT, [], { signal: controller.signal })
+    ).rejects.toBeInstanceOf(Anthropic.APIUserAbortError);
+  });
 });
 
 describe('getConfiguredModel', () => {
@@ -525,8 +677,8 @@ describe('getConfiguredModel', () => {
   });
 
   it('reads the env var live rather than a value frozen at module-import time — this module was already ' +
-    'imported at the top of this file, well before this test sets the var, and .env-loading via loadEnv() ' +
-    'only runs even later than that, inside the isMain block; a frozen module-level constant would miss both', () => {
+    'imported at the top of this file, well before this test sets the var, and .env-loading via the dev ' +
+    "adapter's loadEnv() only runs even later than that; a frozen module-level constant would miss both", () => {
     delete process.env[ENV_KEY];
     expect(getConfiguredModel()).toBe('claude-sonnet-5');
     process.env[ENV_KEY] = 'claude-opus-4-8';
