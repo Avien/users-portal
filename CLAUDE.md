@@ -83,7 +83,7 @@ npm run validate:react     # tsc --noEmit + lint + test React projects + shared 
 
 npm run build:prod         # Vercel Angular deployment command — build:angular, or build:angular:preview when $VERCEL_ENV=preview
 npm run build:angular      # validate:angular → nx build users-portal-angular → dist/apps/users-portal-angular
-npm run build:angular:preview # Vercel Preview build — generates environment.preview.ts (gitignored) from Preview-scoped VITE_ORDERS_API_URL / VITE_ORDERS_WS_URL, then nx build --configuration=preview
+npm run build:angular:preview # Vercel Preview build — generates environment.preview.ts (gitignored) from Preview-scoped VITE_ORDERS_API_URL / VITE_ORDERS_WS_URL / VITE_REACT_REMOTE_URL, then nx build --configuration=preview
 npm run build:react        # validate:react   → nx build users-portal-react   → dist/users-portal-react
 
 npm run g:feature-domain -- <name>  # scaffold new dual-framework feature domain (see Generator section)
