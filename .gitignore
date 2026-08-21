@@ -50,3 +50,8 @@ vite.config.*.timestamp*
 .env.local
 .env.*.local
 .vercel
+
+# generated at Angular Preview build time by tools/generate-angular-preview-env.mjs
+# from Vercel Preview env vars — never a committed constant (see that script's
+# header comment for why: the backing Railway URL is expected to be ephemeral)
+apps/users-portal-angular/src/environments/environment.preview.ts

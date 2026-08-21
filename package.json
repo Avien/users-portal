@@ -20,9 +20,10 @@
     "validate:react": "tsc --noEmit -p apps/users-portal-react/tsconfig.app.json && nx run-many -t lint test --projects=tag:framework:react,tag:framework:shared",
     "validate:vue": "vue-tsc --noEmit -p apps/users-portal-vue/tsconfig.app.json && nx run-many -t lint test --projects=tag:framework:vue,tag:framework:shared",
     "build:angular": "npm run validate:angular && nx build users-portal-angular",
+    "build:angular:preview": "node tools/generate-angular-preview-env.mjs && npm run validate:angular && nx build users-portal-angular --configuration=preview",
     "build:react": "npm run validate:react && nx build users-portal-react",
     "build:vue": "npm run validate:vue && nx build users-portal-vue",
-    "build:prod": "npm run build:angular",
+    "build:prod": "if [ \"$VERCEL_ENV\" = \"preview\" ]; then npm run build:angular:preview; else npm run build:angular; fi",
     "g:feature-domain": "npm run build:generators && nx g @portal/local-plugin:feature-domain",
     "build:generators": "tsc tools/generators/feature-domain/index.ts tools/generators/generators.utils.ts --module commonjs --moduleResolution node --target es2020 --outDir tools/generators/dist --skipLibCheck --esModuleInterop && cp -r tools/generators/feature-domain/files tools/generators/dist/feature-domain/"
   },
