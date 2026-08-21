@@ -10,7 +10,7 @@ export function UserOrders() {
   return (
     <>
     <ToastStack notifications={notifications} onDismiss={dismissOrderNotification} />
-    <section style={shellStyle}>
+    <section>
       <header style={pageHeaderStyle}>
         <h1 style={{ margin: '0 0 0.5rem' }}>Users orders dashboard</h1>
         <div style={subtitleRowStyle}>
@@ -44,8 +44,10 @@ function ordersLoading(globalLoading: boolean, selectedUserId: number | null): b
 }
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
+// Page-shell width/margin/padding lives at the app composition root (app.tsx),
+// not here — the app composes UserOrders alongside other features on /users and
+// owns the shared column they both align to.
 
-const shellStyle: CSSProperties = { maxWidth: 900, margin: '0 auto', padding: '2rem' };
 const pageHeaderStyle: CSSProperties = { marginBottom: '1.5rem' };
 const subtitleRowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8 };
 const summaryGridStyle: CSSProperties = {

@@ -44,14 +44,20 @@ export function useUsersFacade(): UserOrdersVm & IUsersFacadeInteractions {
     }
   }, [usersQuery.data, userId, navigate]);
 
-  // Merge any WS orders that arrived before this user's API fetch completed
+  // Merge any WS orders that arrived before this user's API fetch completed.
+  // The fetch now reads the same canonical live store those WS orders came
+  // from, so it can race and already include some of them — dedupe by id
+  // rather than assuming the buffer is always strictly new.
   useEffect(() => {
     if (!ordersQuery.isSuccess || selectedUserId === null) return;
     const pending = drainPendingOrders(selectedUserId);
     if (pending.length === 0) return;
-    queryClient.setQueryData<Order[]>(['orders', selectedUserId], (prev) =>
-      prev ? [...prev, ...pending] : pending
-    );
+    queryClient.setQueryData<Order[]>(['orders', selectedUserId], (prev) => {
+      if (!prev) return pending;
+      const existingIds = new Set(prev.map((o) => o.id));
+      const newOnes = pending.filter((o) => !existingIds.has(o.id));
+      return newOnes.length > 0 ? [...prev, ...newOnes] : prev;
+    });
   }, [ordersQuery.isSuccess, selectedUserId, queryClient]);
 
   return {

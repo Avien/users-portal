@@ -63,15 +63,31 @@ export function useUsersFacade(): UsersFacade {
 
   // Effect 2 — merge WS orders that arrived before this user's fetch completed.
   // (React: useEffect deps [ordersQuery.isSuccess, selectedUserId].)
+  //
+  // The HTTP fetch now reads the same canonical live store those WS orders
+  // came from, so it can race and already include some of them — merge by id
+  // rather than assuming the pending buffer is always strictly new. Unlike
+  // React's drain merge (which keeps the HTTP version on a collision), the WS
+  // payload wins here since it's the more recent observation of that order;
+  // pending-only orders are appended, and existing ordering is preserved.
   watch(
     [() => ordersQuery.isSuccess.value, () => selectedUserId.value],
     ([isSuccess, userId]) => {
       if (!isSuccess || userId === null) return;
       const pending = drainPendingOrders(userId);
       if (pending.length === 0) return;
-      queryClient.setQueryData<Order[]>(['orders', userId], (prev) =>
-        prev ? [...prev, ...pending] : pending,
-      );
+      queryClient.setQueryData<Order[]>(['orders', userId], (prev) => {
+        if (!prev) return pending;
+        // Map collapses same-id duplicates within `pending` itself to the last
+        // (latest) occurrence — deriving pendingOnly from its values, not the
+        // raw `pending` array, is what keeps a pending-only id that arrived
+        // twice over WS before this drain to exactly one order.
+        const pendingById = new Map(pending.map((order) => [order.id, order]));
+        const merged = prev.map((order) => pendingById.get(order.id) ?? order);
+        const prevIds = new Set(prev.map((order) => order.id));
+        const pendingOnly = [...pendingById.values()].filter((order) => !prevIds.has(order.id));
+        return [...merged, ...pendingOnly];
+      });
     },
     { immediate: true },
   );

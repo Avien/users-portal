@@ -1,0 +1,7 @@
+{
+  "name": "business-agent-vue",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/business-agent-vue/src",
+  "projectType": "library",
+  "tags": ["scope:business-agent-vue", "type:feature", "framework:vue"]
+}

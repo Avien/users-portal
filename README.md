@@ -46,9 +46,28 @@ The UI lists users and their orders. Selecting a user loads orders lazily with p
 
 **Try it locally:**
 ```bash
-npm run mock:ws && npm start
+npm run mock:ws && npm run start:react
 ```
 On connect, the mock server immediately emits two orders for the same user (~0.5s/~1.5s in) to trigger the critical burst toast without waiting for the random stream. In production the same server runs persistently on Railway; Angular and React each read its URL from their own environment config.
+
+## 🗄️ Canonical Orders Store
+
+Every reader of Orders data — each frontend's initial load, the WebSocket stream, and the [Business Agent](docs/roadmap.md#product-facing-business-ai-agent) — reads from the **same** live server-side state, not a static snapshot frozen at process start:
+
+```text
+                    Canonical Orders Store
+                           │
+               ┌───────────┴────────────┐
+               │                        │
+          GET /api/orders          WS /orders
+               │                        │
+        ┌──────┴──────┐                 │
+        ↓             ↓                 ↓
+ Business Agent    frontend       cache updates
+                  initial load
+```
+
+`tools/mock-orders-ws-server.mjs` owns the one canonical, in-memory order store — module-scope, shared across every connection, and the single origin for every order in the system, including ones generated after startup. `GET /api/orders` serves the current snapshot to both the Business Agent and each frontend's initial load; `WS /orders` then pushes incremental updates to connected frontends. Without this, a browser refresh after new orders arrived would show stale mock-only data while the agent saw the full picture (or vice versa) — reading from one shared source is what keeps them in sync.
 
 ## ⚖️ Architecture at a Glance
 
@@ -191,8 +210,8 @@ npm install
 # Angular — http://localhost:4200
 npm run validate:angular && npm run mock:ws && npm run start:angular
 
-# React — http://localhost:4201
-npm run validate:react && npm run mock:ws && npm run start:react
+# React — http://localhost:4201 (also starts the WS mock + local Business Agent server)
+npm run validate:react && npm run start:react
 
 # Shell — http://localhost:4000 (no build step)
 npm run start:shell
@@ -208,8 +227,10 @@ npm run validate   # lint + test everything, all frameworks
 
 | Command | Scope | Description |
 | :--- | :--- | :--- |
-| `npm run start:angular` / `start:react` / `start:shell` | — | Serve each app (`:4200` / `:4201` / `:4000`) |
-| `npm run mock:ws` | Both | WS mock server at `ws://localhost:3000/orders` |
+| `npm run start:angular` / `start:shell` | — | Serve each app (`:4200` / `:4000`) |
+| `npm run start:react` | React | Serves the app (`:4201`) **and** the WS mock + local Business Agent server together, via `concurrently` |
+| `npm run mock:ws` | Both | WS mock server at `ws://localhost:3000/orders` — only needed standalone for Angular |
+| `npm run business-agent` | React | Local Business Agent server at `http://localhost:8787` — only needed standalone outside `start:react` |
 | `npm run validate` | All | Lint + test everything |
 | `npm run validate:angular` / `validate:react` | Angular / React | Lint + test that framework + shared lib |
 | `npm run build:angular` / `build:react` | Angular / React | Validate + production build |

@@ -47,7 +47,13 @@ export function useOrdersStream(): void {
       const order = parsed.payload;
 
       queryClient.setQueryData<Order[]>(['orders', order.userId], (prev) => {
-        if (prev) return [...prev, order];
+        if (prev) {
+          // The initial REST fetch now reads the same canonical live store this
+          // order came from, so it can race this WS message and already include
+          // it — append only if it's genuinely not there yet.
+          if (prev.some((o) => o.id === order.id)) return prev;
+          return [...prev, order];
+        }
         // Cache not populated yet — buffer until the facade drains it after API load
         const buffered = pendingByUser.get(order.userId) ?? [];
         pendingByUser.set(order.userId, [...buffered, order]);

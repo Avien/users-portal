@@ -16,7 +16,19 @@ export default defineConfig(() => ({
     port: 4202,
     host: 'localhost',
   },
-  plugins: [vue(), nxViteTsPaths(), nxCopyAssetsPlugin(['*.md'])],
+  plugins: [
+    vue({
+      template: {
+        compilerOptions: {
+          // <business-agent-widget> is a real (registered) Custom Element, not an
+          // unresolved Vue component — this stops Vue from warning/erroring on it.
+          isCustomElement: (tag) => tag === 'business-agent-widget',
+        },
+      },
+    }),
+    nxViteTsPaths(),
+    nxCopyAssetsPlugin(['*.md']),
+  ],
   test: {
     globals: true,
     environment: 'jsdom',

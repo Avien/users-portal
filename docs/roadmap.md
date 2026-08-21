@@ -63,7 +63,7 @@ timestamped/live-stream data is added.)*
   lib's public `index.ts`
 - Tests covering the widget's behavior and contract
 
-#### Phase 3 — Host Integration ⬜ Not yet implemented
+#### Phase 3 — Host Integration ✅ Implemented
 
 The same `<business-agent-widget>` gets dropped into all three apps, not
 reimplemented per framework — this is exactly what the Phase 2 Web
@@ -128,7 +128,7 @@ business tools
 ```text
 Phase 1  Business Agent engine                      ✅
 Phase 2  Shared Web Component                       ✅
-Phase 3  Angular / React / Vue host integration      ⬜
+Phase 3  Angular / React / Vue host integration      ✅
 Phase 4  Real deployed /api/business-agent endpoint  ⬜
 Phase 5  Docs + live-demo closeout                   ⬜
 ```

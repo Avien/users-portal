@@ -1,10 +1,10 @@
 import type { RouteRecordRaw } from 'vue-router';
-import { UserOrders } from '@portal/users-vue/feature';
+import UsersPage from './pages/UsersPage.vue';
 
-// selectedUserId is URL-driven; both routes render the same smart container.
+// selectedUserId is URL-driven; both routes render the same page.
 export const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/users' },
-  { path: '/users', component: UserOrders },
-  { path: '/users/:userId', component: UserOrders },
+  { path: '/users', component: UsersPage },
+  { path: '/users/:userId', component: UsersPage },
   { path: '/:pathMatch(.*)*', redirect: '/users' },
 ];
