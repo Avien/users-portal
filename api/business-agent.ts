@@ -132,9 +132,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     const rawBody = await readRequestBody(req, MAX_BODY_BYTES);
     const { prompt, history } = parseAgentRequestBody(rawBody);
     // Deliberately no prompt/history logging here, unlike the dev adapter —
-    // production should not log complete user prompts by default (see
-    // docs/roadmap.md Phase 4 §9). BUSINESS_AGENT_USAGE_LOG below covers
-    // aggregated token/cost telemetry only, never prompt content.
+    // production should not log complete user prompts by default.
+    // BUSINESS_AGENT_USAGE_LOG below covers aggregated token/cost telemetry
+    // only, never prompt content.
     const snapshot = await fetchOrdersSnapshot();
     const { usage, ...result } = await runAgent(client, prompt, snapshot, history);
     if (process.env['BUSINESS_AGENT_USAGE_LOG'] === '1') {

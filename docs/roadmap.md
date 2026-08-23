@@ -85,57 +85,78 @@ Each host app should:
 - contain no LLM orchestration or business-agent logic — that stays
   server-side, unchanged from Phase 1
 
-#### Phase 4 — Production API / Deployment ⬜ Not yet implemented
+#### Phase 4 — Production API / Deployment ✅ Implemented
 
-`tools/business-agent-server.ts` is a Phase 1 development/proof server
-(`node:http` on `localhost:8787`), not the final deployed backend.
+`tools/business-agent-server.ts` remains a Phase 1 development adapter
+(`node:http` on `localhost:8787`) — it is not the production architecture.
+`/api/business-agent` is the real deployed Vercel serverless endpoint,
+reusing the same `runAgent`/tool logic as-is, with no duplicated agent
+implementation.
 
 ```text
 POST /api/business-agent
         ↓
-server-side/serverless handler
+Vercel serverless handler
         ↓
-existing Business Agent orchestration
+existing Business Agent orchestration (runAgent)
         ↓
-Claude API
+Claude API — bounded tool-calling loop
         ↓
 business tools
 ```
 
-- `ANTHROPIC_API_KEY` remains server-side only
-- Reuses the existing `runAgent`, tool definitions, and dispatch/tool-loop
-  logic as-is — no duplicated agent implementation for deployment
-- The smallest serverless/API boundary compatible with the project's
-  current deployment architecture
-- The deployed widget uses its default same-origin `/api/business-agent`;
-  the configurable `endpoint` attribute stays useful for local dev only
-- The permissive `Access-Control-Allow-Origin: *` added for local dev is
-  explicitly a dev-only concern, not the production architecture
-- Verified from the actually deployed application, not only `localhost`
+Completed:
+- `ANTHROPIC_API_KEY` stays server-side only — never reaches the browser
+- Request/Content-Type validation, bounded body size, sanitized
+  provider/server errors (Anthropic errors logged server-side, safe
+  messages returned to the browser), bounded SDK retries
+- Vercel Firewall rate limiting (8 requests / 60s / IP →
+  `429 Too Many Requests`), verified live against the deployed Preview —
+  including confirming the invalid test requests used to trigger it never
+  reached Anthropic
+- A real cross-framework Orders source-of-truth gap was found and fixed:
+  Angular and Vue were seeding from static mock data instead of the
+  canonical Railway store. All three frontends now follow the same model —
+  canonical HTTP snapshot on load, WS deltas upserted/deduped by id on top
+  — matching what the Business Agent's `/api/orders-snapshot` already read
+- A temporary Railway PR Environment was used to verify the canonical
+  Orders backend (`/api/orders`, `/api/orders-snapshot`, `/orders` WS)
+  ahead of a `main`/production rollout, with Preview-scoped CORS
+  (`ORDERS_API_ALLOWED_ORIGINS`) rather than a wildcard
+- Verified end-to-end against the actually deployed Vercel Previews (React,
+  Angular, Vue standalone, plus the Angular-hosted Hybrid MFE composing the
+  React Preview remote) — not only `localhost`
 
-#### Phase 5 — Documentation / Demo Closeout ⬜ Not yet implemented
+This was verified through deployed Vercel Preview + a temporary Railway PR
+Environment, **not** a `main`/production rollout — see
+[docs/business-agent.md](./business-agent.md) for the full architecture
+and deployment write-up.
 
-- Move this roadmap item from in-progress to **Completed**
+#### Phase 5 — Documentation / Demo Closeout 🔄 In Progress
+
 - Update [Agentic AI Development](./agentic-workflow.md) to clearly
   distinguish all four AI surfaces in this repo: the Claude Code /
   agentic development workflow, the autonomous development agent
   (`tools/agent.mjs`), the PR review agent (`tools/pr-review-agent.mjs`),
   and the product-facing Business Agent
+- Add a dedicated Business Agent architecture doc
+  ([docs/business-agent.md](./business-agent.md))
 - Update the README only where it improves portfolio discoverability
-- Document one or two real example prompts with their actual tool traces
-- Verify the finished feature from the deployed apps
+- Document a few real example prompts grounded in actual mock data/tests
+- Move this roadmap item from in-progress to **Completed** once the above
+  and an independent review of the PR are done
 
 ```text
 Phase 1  Business Agent engine                      ✅
 Phase 2  Shared Web Component                       ✅
 Phase 3  Angular / React / Vue host integration      ✅
-Phase 4  Real deployed /api/business-agent endpoint  ⬜
-Phase 5  Docs + live-demo closeout                   ⬜
+Phase 4  Deployed /api/business-agent + Preview verification ✅
+Phase 5  Docs + live-demo closeout                   🔄
 ```
 
-**Not complete until Phase 5** — Phase 3 alone (host integration against
-the local dev server) is not a shipped feature; Phase 4 (real deployment)
-and Phase 5 (closeout) are required before this item moves to Completed.
+**Not complete until Phase 5** — Phase 4 (real deployment, verified against
+deployed Vercel Previews) is done; Phase 5 (documentation/demo closeout) is
+still in progress before this item moves to Completed.
 
 ### Authentication & Platform
 

@@ -227,8 +227,8 @@ export const tools = {
     definition: {
       name: 'getUserOrders',
       description:
-        'Get every current order for one user (by numeric userId), plus a total-spend summary — ' +
-        'reflects orders up to the moment this tool is called, not a fixed starting dataset. ' +
+        'Get every order for one user (by numeric userId), plus a total-spend summary — reflects the ' +
+        'canonical Orders snapshot captured at the start of this request, not a fixed starting dataset. ' +
         'Use searchUsers first if you only know the user by name.',
       input_schema: {
         type: 'object' as const,
@@ -249,10 +249,10 @@ export const tools = {
     definition: {
       name: 'getOrderMonitoringSignals',
       description:
-        `Flag which of a user's current orders are high-value (>= $${SUSPICIOUS_ORDER_TOTAL_THRESHOLD}) ` +
-        'and whether they have received multiple orders within a short burst window — the same two ' +
-        "signals the live UI's warning/critical monitoring toasts use. Use this to judge which users " +
-        'need attention right now, including orders that arrived after this conversation started.',
+        `Flag which of a user's orders are high-value (>= $${SUSPICIOUS_ORDER_TOTAL_THRESHOLD}) and ` +
+        'whether they have received multiple orders within a short burst window — the same two signals ' +
+        "the live UI's warning/critical monitoring toasts use, evaluated against the canonical Orders " +
+        'snapshot captured at the start of this request. Use this to judge which users need attention.',
       input_schema: {
         type: 'object' as const,
         properties: { userId: { type: 'number', description: 'Numeric user id, e.g. 3' } },

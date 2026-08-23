@@ -1,8 +1,9 @@
 // Phase 3 host integration (see docs/roadmap.md) — deliberately thin. This registers
 // and renders the shared <business-agent-widget> as-is: no AI UI reimplementation, no
 // LLM orchestration, no business-agent logic here. That all stays server-side
-// (tools/business-agent-server.ts) and inside the framework-free widget itself
-// (libs/business-agent-widget) — this file only wires it into an Angular host.
+// (tools/business-agent-core.ts, behind api/business-agent.ts in production) and inside
+// the framework-free widget itself (libs/business-agent-widget) — this file only wires
+// it into an Angular host.
 import {
   AfterViewInit,
   ChangeDetectionStrategy,

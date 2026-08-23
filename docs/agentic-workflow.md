@@ -116,10 +116,23 @@ The generator enforces architecture at **creation time** — correct Nx tags, la
 | `/architecture-check` | Before PR (local) | Drift detection across all layers |
 | PR Review Agent | Every PR (CI) | Same drift checks, automated, posted as a PR comment |
 
-## Future Direction
+## Product-Facing vs. Development-Facing AI
 
-A product-facing business agent is planned as the next evolution of the
-agentic architecture, applying the same LLM + tool-calling pattern to
-Users/Orders business data rather than the source code.
+Everything above is **development tooling** — it helps build and review
+this repository's own code. The **Business Agent** is a separate
+product-facing surface: a feature end users interact with, not development
+tooling.
 
-See the [Project Roadmap](./roadmap.md) for this and other planned work.
+| Surface | Who uses it | What it touches |
+| :--- | :--- | :--- |
+| Claude Code (this session) | Me, during development | The whole repo, interactively |
+| `tools/agent.mjs` | Me, to scaffold new domains | Source code, unattended |
+| `tools/pr-review-agent.mjs` | CI, on every PR | A PR's diff, for architecture drift |
+| **`<business-agent-widget>`** | **End users, in the app UI** | **Live Users/Orders business data — no source code access at all** |
+
+Same underlying pattern (Claude API + structured tool calling +
+model → tool → result → model), applied to a completely different
+domain and audience. See **[docs/business-agent.md](./business-agent.md)**
+for the full architecture.
+
+See the [Project Roadmap](./roadmap.md) for other planned work.

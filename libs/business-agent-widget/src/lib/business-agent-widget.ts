@@ -5,7 +5,8 @@
 // plain <script type="module" src="...">. Owns nothing but the prompt input,
 // loading/error/result presentation, and the fetch call itself — no business
 // logic, no tool definitions, no agent-loop code (that all lives server-side
-// in tools/business-agent-server.ts).
+// in tools/business-agent-core.ts, behind the api/business-agent.ts production
+// handler and the tools/business-agent-server.ts local dev adapter).
 
 import { BUSINESS_AGENT_ANSWER_EVENT, BUSINESS_AGENT_ERROR_EVENT } from './business-agent-widget.events';
 import type { AgentAnswerEventDetail, AgentErrorEventDetail, ConversationMessage } from './business-agent-widget.events';
