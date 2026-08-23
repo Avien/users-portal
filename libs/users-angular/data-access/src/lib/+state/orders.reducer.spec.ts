@@ -141,6 +141,43 @@ describe('ordersReducer', () => {
     });
   });
 
+  describe('order.userId is authoritative regardless of order.id magnitude', () => {
+    it('files a streamed order under order.userId even when its id has crossed into another user\'s former id range', () => {
+      // Simulates long server uptime: allocateNewId (tools/mock-orders-ws-server.mjs)
+      // is monotonic per user with no wraparound, so user 1's ids eventually cross
+      // into what used to be user 2's "2xx" range. The order must still be filed
+      // under its real userId (1), not an id-derived reinterpretation (2).
+      const CROSSED_ORDER: Order = { id: 205, userId: 1, total: 42, status: 'pending' };
+
+      const afterStream = ordersReducer(
+        initialOrdersState,
+        UsersActions.ordersUpdatedFromStream({ order: CROSSED_ORDER, removedOrderIds: [] })
+      );
+
+      const all = ordersAdapter.getSelectors().selectAll(afterStream);
+      expect(all).toEqual([CROSSED_ORDER]);
+      expect(all[0].userId).toBe(1);
+    });
+
+    it('does not let a crossed-range order leak into another user\'s loaded/selected orders', () => {
+      const afterLoadUser2 = ordersReducer(
+        initialOrdersState,
+        UsersActions.loadUserOrdersSuccess({ userId: 2, orders: [] })
+      );
+
+      // A user-1 order whose id (205) falls in what used to be user 2's range.
+      const CROSSED_ORDER: Order = { id: 205, userId: 1, total: 42, status: 'pending' };
+      const afterStream = ordersReducer(
+        afterLoadUser2,
+        UsersActions.ordersUpdatedFromStream({ order: CROSSED_ORDER, removedOrderIds: [] })
+      );
+
+      const all = ordersAdapter.getSelectors().selectAll(afterStream);
+      const user2Orders = all.filter((o) => o.userId === 2);
+      expect(user2Orders).toEqual([]); // never attributed to user 2 just because id looks like it
+    });
+  });
+
   describe('WS-before-HTTP hydration race — pending eviction reconciliation', () => {
     it('a WS eviction that arrives before this user has ever loaded is held as a tombstone, then reconciled once loadUserOrdersSuccess resolves — even though the (stale, in-flight-before-the-eviction) HTTP snapshot still contains the evicted order', () => {
       const NEW_ORDER: Order = { id: 199, userId: 1, total: 5, status: 'pending' };

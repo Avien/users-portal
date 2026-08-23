@@ -1,6 +1,6 @@
 import { createEntityAdapter } from '@ngrx/entity';
 import { createReducer, on } from '@ngrx/store';
-import { Order, OrdersState, normalizeOrderUserIdFromId } from '@portal/users/utils';
+import { Order, OrdersState } from '@portal/users/utils';
 import { UsersActions } from './users.actions';
 
 export const ordersAdapter = createEntityAdapter<Order>();
@@ -81,11 +81,12 @@ export const ordersReducer = createReducer(
   // order from a stale snapshot — so the eviction is held as a tombstone
   // instead and reconciled once that HTTP response resolves (see above).
   on(UsersActions.ordersUpdatedFromStream, (state, { order, removedOrderIds }) => {
-    const normalizedOrder = normalizeOrderUserIdFromId(order);
-    // Deliberately the RAW order.userId here, not normalizedOrder.userId —
-    // removedOrderIds came from the server's own pruneOldestForUser(order.userId)
-    // (tools/orders-store.mjs), so the tombstone must be filed under that same
-    // userId space, not a client-side id-derived reinterpretation of it.
+    // order.userId is authoritative for server-sourced orders — it is never
+    // re-derived from order.id. The canonical store (tools/orders-store.mjs)
+    // allocates ids monotonically per user with no wraparound, so an id-based
+    // convention (e.g. "1xx -> user 1") only holds for a short window after
+    // server startup; trusting it here would silently re-file long-lived
+    // users' orders under the wrong userId once their ids cross that boundary.
     const userId = order.userId;
     const isHydratedForUser = state.loadedUserIds.includes(userId);
 
@@ -104,6 +105,6 @@ export const ordersReducer = createReducer(
         };
       }
     }
-    return ordersAdapter.upsertOne(normalizedOrder, nextState);
+    return ordersAdapter.upsertOne(order, nextState);
   })
 );

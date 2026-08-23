@@ -28,7 +28,9 @@ function shadow(el: BusinessAgentWidget) {
 }
 
 // The visible You/Agent transcript, in order — this is what a user actually sees,
-// rendered from the same `history` array that gets POSTed as `history`.
+// rendered from `this.history`. The `history` POSTed with the next request is a
+// separately-bounded copy of that same array (see boundHistoryForRequest) — always
+// equal to it for short answers, but not for one over MAX_HISTORY_MESSAGE_LENGTH.
 function transcriptMessages(el: BusinessAgentWidget) {
   const { transcript } = shadow(el);
   return Array.from(transcript.querySelectorAll('.message')).map((node) => ({
@@ -187,6 +189,50 @@ describe('BusinessAgentWidget', () => {
       expect(fifthCallBody.history).toHaveLength(6);
       expect(fifthCallBody.history[0]).toEqual({ role: 'user', content: 'question 2' });
       expect(fifthCallBody.history).not.toContainEqual({ role: 'user', content: 'question 1' });
+    });
+
+    it('bounds an over-length answer in the outgoing history instead of dropping the assistant turn', async () => {
+      // Claude's own answers can run up to MAX_OUTPUT_TOKENS (tools/business-agent-core.ts,
+      // 2048 tokens — comfortably over 2000 characters). The server's own sanitizeHistory()
+      // discards (does not truncate) any history entry over MAX_HISTORY_MESSAGE_LENGTH
+      // (2000 chars) — so without client-side bounding, a long Answer #1 would silently
+      // vanish from the history sent with Ask #2, leaving two consecutive user turns and
+      // breaking pronoun/follow-up resolution ("his", "that user") right after the exact
+      // kind of detailed answer most likely to need it.
+      const longAnswer = 'A'.repeat(3000);
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ answer: longAnswer, trace: [], turns: 1 }) })
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ answer: 'follow-up answer', trace: [], turns: 1 }) });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const el = mount();
+      await submit(el, 'Summarize every order in detail.');
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+      // The full, untruncated answer is what the user actually sees.
+      expect(transcriptMessages(el)).toEqual([
+        { role: 'user', text: 'Summarize every order in detail.' },
+        { role: 'assistant', text: longAnswer },
+      ]);
+
+      await submit(el, 'What was the highest one?');
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+      const secondCallBody = JSON.parse(fetchMock.mock.calls[1][1].body) as {
+        prompt: string;
+        history: { role: string; content: string }[];
+      };
+      // The assistant turn survives — bounded, not dropped — so the sanitized history
+      // stays alternating (user, assistant) instead of two consecutive user turns.
+      expect(secondCallBody.history).toHaveLength(2);
+      expect(secondCallBody.history[0]).toEqual({ role: 'user', content: 'Summarize every order in detail.' });
+      expect(secondCallBody.history[1].role).toBe('assistant');
+      expect(secondCallBody.history[1].content.length).toBeLessThanOrEqual(2000);
+      expect(longAnswer.startsWith(secondCallBody.history[1].content)).toBe(true);
+
+      // The transcript itself is never touched by request-side bounding — still full.
+      expect(transcriptMessages(el)[1]).toEqual({ role: 'assistant', text: longAnswer });
     });
 
     it('does not pollute history with a failed request', async () => {

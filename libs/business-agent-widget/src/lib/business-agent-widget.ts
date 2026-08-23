@@ -20,6 +20,22 @@ const DEFAULT_ENDPOINT = '/api/business-agent';
 // refresh, per the roadmap's explicit scope for this feature.
 const MAX_HISTORY_MESSAGES = 6;
 
+// Same numeric bound as tools/business-agent-core.ts's own MAX_HISTORY_MESSAGE_LENGTH
+// — independently duplicated here for the same reason ConversationMessage already is
+// (see the import comment above): the widget is browser code, the server is a Node
+// tool script, and this value is too small to justify sharing a package across those
+// two runtimes.
+//
+// Claude's own answers can run up to MAX_OUTPUT_TOKENS (2048 tokens — well past 2000
+// characters). The server's own sanitizeHistory() DISCARDS (does not truncate) any
+// history entry over this length, since it can't safely guess how to shorten
+// arbitrary untrusted input — so without bounding what THIS widget sends, a long
+// answer would silently vanish from history on the next Ask, breaking multi-turn
+// follow-ups ("his", "that user") right after the exact kind of detailed answer most
+// likely to need them. Bounding here is safe (unlike the server) because it's this
+// widget's own prior answer, not arbitrary third-party input.
+const MAX_HISTORY_MESSAGE_LENGTH = 2000;
+
 type AgentResponse = Omit<AgentAnswerEventDetail, 'prompt'>;
 
 function toErrorMessage(err: unknown): string {
@@ -53,6 +69,22 @@ function isAgentResponse(body: unknown): body is AgentResponse {
     typeof candidate?.answer === 'string' &&
     Array.isArray(candidate?.trace) &&
     typeof candidate?.turns === 'number'
+  );
+}
+
+// Bounds what gets SENT as `history` — never what gets rendered. `this.history`
+// (the transcript's own source of truth, see renderTranscript) is left untouched;
+// this only maps over a copy at request time, truncating any entry over
+// MAX_HISTORY_MESSAGE_LENGTH so it survives the server's own sanitizeHistory()
+// length check instead of being discarded outright (see that constant's comment
+// above). A map (never a filter) — every entry survives, in order, so the
+// alternating user/assistant shape sent to the server can never be broken by this
+// step, even when the answer it's bounding was very long.
+function boundHistoryForRequest(history: ConversationMessage[]): ConversationMessage[] {
+  return history.map((message) =>
+    message.content.length > MAX_HISTORY_MESSAGE_LENGTH
+      ? { ...message, content: message.content.slice(0, MAX_HISTORY_MESSAGE_LENGTH) }
+      : message
   );
 }
 
@@ -214,7 +246,7 @@ export class BusinessAgentWidget extends HTMLElement {
       const res = await fetch(this.endpoint, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ prompt, history: this.history }),
+        body: JSON.stringify({ prompt, history: boundHistoryForRequest(this.history) }),
         signal: controller.signal,
       });
       // A platform/firewall layer in front of the server (Vercel's own error

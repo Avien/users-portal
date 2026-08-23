@@ -117,5 +117,36 @@ describe('order-monitoring.utils', () => {
 
       expect(toastPayloads.some((p) => p.severity === 'critical')).toBe(true);
     });
+
+    it('attributes a high-value toast to order.userId even when the order id has crossed into another user\'s former id range', () => {
+      // allocateNewId (tools/mock-orders-ws-server.mjs) is monotonic per user with
+      // no wraparound — a long-lived user 1 can receive an id like 205, which used
+      // to "belong" to user 2 under an id-range convention. The toast must still
+      // name user 1 (order.userId), not user 2 (an id-derived reinterpretation).
+      const usersById: User[] = [
+        { id: 1, name: 'Avi Cohen' },
+        { id: 2, name: 'Dana Levi' }
+      ];
+      let state = createOrderMonitoringState();
+      state = reduceOrderMonitoring(state, [o(101, 1, 10)], usersById, {
+        now: 1_000_000,
+        burstWindowMs: ORDER_BURST_WINDOW_MS
+      }).next;
+
+      const crossedRangeOrder = o(205, 1, 600); // id looks like user 2's range; userId says 1
+      const { toastPayloads } = reduceOrderMonitoring(
+        state,
+        [o(101, 1, 10), crossedRangeOrder],
+        usersById,
+        { now: 1_000_100, burstWindowMs: ORDER_BURST_WINDOW_MS }
+      );
+
+      expect(toastPayloads).toEqual([
+        expect.objectContaining({
+          severity: 'warning',
+          message: expect.stringContaining('Avi Cohen') as unknown as string
+        })
+      ]);
+    });
   });
 });

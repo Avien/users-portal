@@ -30,9 +30,18 @@ export class BodyTooLargeError extends Error {}
 // on its own. Works identically against node:http's raw IncomingMessage and
 // Vercel's request object (which extends the same type) — this is the whole
 // reason it's a shared, transport-agnostic utility.
+//
+// Accumulates raw Buffer chunks and decodes UTF-8 exactly ONCE at the end, via
+// Buffer.concat — deliberately NOT `body += chunk`, which implicitly calls
+// chunk.toString('utf8') on every individual chunk. A multibyte character (e.g.
+// Hebrew, emoji) split across two chunks by the network/proxy would decode as
+// U+FFFD replacement characters on both sides of the split under that per-chunk
+// approach — corrupting the prompt or breaking JSON.parse outright. The byte
+// count against maxBytes is unaffected by this: chunk.length is already a byte
+// length (Buffer, not string), same as before.
 export function readRequestBody(req: IncomingMessage, maxBytes: number): Promise<string> {
   return new Promise((resolvePromise, reject) => {
-    let body = '';
+    const chunks: Buffer[] = [];
     let bytes = 0;
     let settled = false;
     req.on('data', (chunk: Buffer) => {
@@ -43,12 +52,12 @@ export function readRequestBody(req: IncomingMessage, maxBytes: number): Promise
         reject(new BodyTooLargeError('Request body is too large.'));
         return;
       }
-      body += chunk;
+      chunks.push(chunk);
     });
     req.on('end', () => {
       if (settled) return;
       settled = true;
-      resolvePromise(body);
+      resolvePromise(Buffer.concat(chunks).toString('utf8'));
     });
     req.on('error', (err) => {
       if (settled) return;

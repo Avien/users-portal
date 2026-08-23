@@ -1,7 +1,6 @@
 import { Notification } from '../models/notification.model';
 import { Order } from '../models/order.interface';
 import { User } from '../models/user.interface';
-import { normalizeOrderUserIdFromId } from './user-orders.utils';
 
 /** Orders at or above this total trigger a high-value monitoring toast. */
 export const SUSPICIOUS_ORDER_TOTAL_THRESHOLD = 500;
@@ -117,8 +116,12 @@ export function reduceOrderMonitoring(
   users: readonly User[],
   options: { now: number; burstWindowMs: number }
 ): { next: OrderMonitoringState; toastPayloads: OrderMonitoringToastPayload[] } {
-  const normalizedOrders = orders.map((o) => normalizeOrderUserIdFromId(o));
-  const nextFingerprints = new Map(normalizedOrders.map((o) => [o.id, fingerprint(o)]));
+  // order.userId is authoritative for server-sourced orders — never re-derived
+  // from order.id (see the comment on ordersUpdatedFromStream in
+  // libs/users-angular/data-access's orders.reducer.ts for why: the canonical
+  // store allocates ids monotonically per user with no wraparound, so an
+  // id-based convention only holds for a short window after server startup).
+  const nextFingerprints = new Map(orders.map((o) => [o.id, fingerprint(o)]));
   const nextRecent = cloneRecentArrivals(prev.recentArrivalsAtByUserId);
   const { now, burstWindowMs } = options;
 
@@ -131,7 +134,7 @@ export function reduceOrderMonitoring(
     return monitoringResult(nextFingerprints, nextRecent, []);
   }
 
-  const newOrder = normalizedOrders.find((o) => o.id === addedIds[0]);
+  const newOrder = orders.find((o) => o.id === addedIds[0]);
   if (!newOrder) {
     return monitoringResult(nextFingerprints, nextRecent, []);
   }

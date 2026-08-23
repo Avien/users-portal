@@ -94,6 +94,73 @@ describe('readRequestBody', () => {
     // Emitting after resolution must not produce an unhandled rejection.
     expect(() => stream.emit('error', new Error('too late'))).not.toThrow();
   });
+
+  describe('multibyte UTF-8 characters split across chunk boundaries', () => {
+    // Node delivers each stream.write() as its own 'data' event (separated by a
+    // tick so they don't coalesce into one chunk) — exactly the shape a real
+    // client's multi-KB non-ASCII request body takes through a real socket/proxy.
+    // Decoding each chunk independently (e.g. `body += chunk`, which implicitly
+    // calls chunk.toString('utf8') per chunk) turns half of a split multibyte
+    // sequence into U+FFFD replacement characters on both sides of the split.
+
+    it('reassembles a 2-byte Hebrew character split across chunks', async () => {
+      const { req, stream } = fakeReq();
+      const promise = readRequestBody(req, 1000);
+      const payload = Buffer.from('{"prompt":"שלום"}', 'utf8');
+      // Split inside the first character's 2-byte UTF-8 sequence (א/ש etc. all
+      // encode as 0xD7 0x9X) — one byte in each chunk.
+      const splitIndex = payload.indexOf(Buffer.from('ש', 'utf8')) + 1;
+      stream.write(payload.subarray(0, splitIndex));
+      await nextTick();
+      stream.write(payload.subarray(splitIndex));
+      stream.end();
+
+      const body = await promise;
+      expect(JSON.parse(body)).toEqual({ prompt: 'שלום' });
+    });
+
+    it('reassembles a 4-byte emoji code point split across chunks', async () => {
+      const { req, stream } = fakeReq();
+      const promise = readRequestBody(req, 1000);
+      const payload = Buffer.from('{"prompt":"😀"}', 'utf8');
+      const emojiStart = payload.indexOf(Buffer.from('😀', 'utf8'));
+      // Split in the middle of the 4-byte sequence (2 bytes in each chunk).
+      const splitIndex = emojiStart + 2;
+      stream.write(payload.subarray(0, splitIndex));
+      await nextTick();
+      stream.write(payload.subarray(splitIndex));
+      stream.end();
+
+      const body = await promise;
+      expect(JSON.parse(body)).toEqual({ prompt: '😀' });
+    });
+
+    it('reassembles a multibyte character split three ways across three chunks', async () => {
+      const { req, stream } = fakeReq();
+      const promise = readRequestBody(req, 1000);
+      const payload = Buffer.from('{"prompt":"😀"}', 'utf8');
+      const emojiStart = payload.indexOf(Buffer.from('😀', 'utf8'));
+      stream.write(payload.subarray(0, emojiStart + 1));
+      await nextTick();
+      stream.write(payload.subarray(emojiStart + 1, emojiStart + 3));
+      await nextTick();
+      stream.write(payload.subarray(emojiStart + 3));
+      stream.end();
+
+      const body = await promise;
+      expect(JSON.parse(body)).toEqual({ prompt: '😀' });
+    });
+
+    it('still enforces MAX_BODY_BYTES as a byte limit (not a JS string-length limit) for multibyte payloads', async () => {
+      const { req, stream } = fakeReq();
+      // Each 😀 is 4 UTF-8 bytes but 2 UTF-16 code units — a string-length-based
+      // cap would wrongly allow roughly 2x this payload through.
+      const payload = Buffer.from('😀'.repeat(10), 'utf8'); // 40 bytes
+      const promise = readRequestBody(req, 39);
+      stream.write(payload);
+      await expect(promise).rejects.toBeInstanceOf(BodyTooLargeError);
+    });
+  });
 });
 
 describe('isJsonContentType', () => {
