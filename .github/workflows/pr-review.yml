@@ -32,6 +32,7 @@ jobs:
         run: git fetch --no-tags origin ${{ github.base_ref }}
 
       - name: Generate architecture review
+        shell: bash
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: node tools/pr-review-agent.mjs --base origin/${{ github.base_ref }} | tee review.md
