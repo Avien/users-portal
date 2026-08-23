@@ -23,7 +23,10 @@ describe('ordersReducer', () => {
     // this is the initial-load/WS race the source-of-truth fix must not break.
     const afterStream = ordersReducer(
       initialOrdersState,
-      UsersActions.ordersUpdatedFromStream({ order: { id: 103, userId: 1, total: 42, status: 'pending' } })
+      UsersActions.ordersUpdatedFromStream({
+        order: { id: 103, userId: 1, total: 42, status: 'pending' },
+        removedOrderIds: [],
+      })
     );
 
     const afterLoad = ordersReducer(
@@ -61,11 +64,110 @@ describe('ordersReducer', () => {
     // Same id arrives again over the WS (REST snapshot vs. WS race) — must not duplicate.
     const afterStream = ordersReducer(
       afterLoad,
-      UsersActions.ordersUpdatedFromStream({ order: ORDER_101 })
+      UsersActions.ordersUpdatedFromStream({ order: ORDER_101, removedOrderIds: [] })
     );
 
     const all = ordersAdapter.getSelectors().selectAll(afterStream);
     expect(all).toHaveLength(1);
     expect(all[0]).toEqual(ORDER_101);
+  });
+
+  describe('ordersUpdatedFromStream — canonical retention eviction propagation', () => {
+    it('removes canonically-evicted orders before upserting the incoming order', () => {
+      const afterLoad = ordersReducer(
+        initialOrdersState,
+        UsersActions.loadUserOrdersSuccess({ userId: 1, orders: [ORDER_101, ORDER_102] })
+      );
+
+      const NEW_ORDER: Order = { id: 999, userId: 1, total: 5, status: 'pending' };
+      const afterStream = ordersReducer(
+        afterLoad,
+        UsersActions.ordersUpdatedFromStream({ order: NEW_ORDER, removedOrderIds: [101] })
+      );
+
+      const all = ordersAdapter.getSelectors().selectAll(afterStream);
+      expect(all.map((o) => o.id).sort((a, b) => a - b)).toEqual([102, 999]);
+    });
+
+    it('leaves entity state unchanged (beyond the upsert) when removedOrderIds is empty', () => {
+      const afterLoad = ordersReducer(
+        initialOrdersState,
+        UsersActions.loadUserOrdersSuccess({ userId: 1, orders: [ORDER_101, ORDER_102] })
+      );
+
+      const NEW_ORDER: Order = { id: 999, userId: 1, total: 5, status: 'pending' };
+      const afterStream = ordersReducer(
+        afterLoad,
+        UsersActions.ordersUpdatedFromStream({ order: NEW_ORDER, removedOrderIds: [] })
+      );
+
+      const all = ordersAdapter.getSelectors().selectAll(afterStream);
+      expect(all.map((o) => o.id).sort((a, b) => a - b)).toEqual([101, 102, 999]);
+    });
+
+    it('the connected client cannot grow beyond the canonical retained count across repeated evicting updates', () => {
+      let state = ordersReducer(
+        initialOrdersState,
+        UsersActions.loadUserOrdersSuccess({ userId: 1, orders: [ORDER_101, ORDER_102] })
+      );
+
+      // Three more updates arrive, each evicting the (now) oldest retained id —
+      // simulates a long-lived connection receiving repeated retention evictions.
+      state = ordersReducer(
+        state,
+        UsersActions.ordersUpdatedFromStream({
+          order: { id: 1001, userId: 1, total: 1, status: 'pending' },
+          removedOrderIds: [101],
+        })
+      );
+      state = ordersReducer(
+        state,
+        UsersActions.ordersUpdatedFromStream({
+          order: { id: 1002, userId: 1, total: 1, status: 'pending' },
+          removedOrderIds: [102],
+        })
+      );
+      state = ordersReducer(
+        state,
+        UsersActions.ordersUpdatedFromStream({
+          order: { id: 1003, userId: 1, total: 1, status: 'pending' },
+          removedOrderIds: [1001],
+        })
+      );
+
+      const all = ordersAdapter.getSelectors().selectAll(state);
+      expect(all).toHaveLength(2); // never grows past the canonical retained count
+      expect(all.map((o) => o.id).sort((a, b) => a - b)).toEqual([1002, 1003]);
+    });
+  });
+
+  describe('WS-before-HTTP hydration race — pending eviction reconciliation', () => {
+    it('a WS eviction that arrives before this user has ever loaded is held as a tombstone, then reconciled once loadUserOrdersSuccess resolves — even though the (stale, in-flight-before-the-eviction) HTTP snapshot still contains the evicted order', () => {
+      const NEW_ORDER: Order = { id: 199, userId: 1, total: 5, status: 'pending' };
+
+      // WS arrives FIRST — user 1 has never loaded (loadedUserIds is empty),
+      // so removeMany([101]) here would be a no-op anyway (101 doesn't exist
+      // in entity state yet). The eviction must be held, not discarded.
+      const afterStream = ordersReducer(
+        initialOrdersState,
+        UsersActions.ordersUpdatedFromStream({ order: NEW_ORDER, removedOrderIds: [101] })
+      );
+
+      expect(afterStream.pendingEvictedIdsByUserId[1]).toEqual([101]);
+      expect(ordersAdapter.getSelectors().selectAll(afterStream).map((o) => o.id)).toEqual([199]);
+
+      // The HTTP request for user 1 was already in flight before the eviction
+      // happened server-side, so its response still includes order 101.
+      const afterLoad = ordersReducer(
+        afterStream,
+        UsersActions.loadUserOrdersSuccess({ userId: 1, orders: [ORDER_101, ORDER_102] })
+      );
+
+      const all = ordersAdapter.getSelectors().selectAll(afterLoad);
+      expect(all.map((o) => o.id).sort((a, b) => a - b)).toEqual([102, 199]); // 101 absent, 199 present
+      expect(all.filter((o) => o.id === 199)).toHaveLength(1); // no duplicates
+      expect(afterLoad.pendingEvictedIdsByUserId[1]).toBeUndefined(); // tombstone cleared after reconciliation
+      expect(afterLoad.loadedUserIds).toEqual([1]);
+    });
   });
 });

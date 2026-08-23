@@ -224,5 +224,60 @@ describe('useUsersFacade', () => {
       expect(matches).toHaveLength(1);
       expect(matches[0]).toEqual(ORDER_105_V2);
     });
+
+    it(
+      'a WS eviction that arrives before the initial HTTP fetch resolves is reconciled once it does — ' +
+        'the stale (already in-flight) HTTP snapshot still containing the evicted order must not reintroduce it',
+      async () => {
+        vi.stubGlobal('WebSocket', MockWebSocket);
+        MockWebSocket.reset();
+
+        let resolveOrders!: (orders: unknown[]) => void;
+        vi.mocked(dataAccess.fetchOrdersByUser).mockImplementation(
+          () => new Promise((resolve) => { resolveOrders = resolve; }),
+        );
+
+        const router: Router = createRouter({
+          history: createMemoryHistory(),
+          routes: [{ path: '/users/:userId', component: { render: () => null } }],
+        });
+        router.push('/users/1');
+        await router.isReady();
+
+        const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+        let facade!: ReturnType<typeof useUsersFacade>;
+        const Comp = defineComponent({
+          setup() {
+            dataAccess.useOrdersStream();
+            facade = useUsersFacade();
+            return () => h('div');
+          },
+        });
+        mount(Comp, {
+          global: { plugins: [router, createPinia(), [VueQueryPlugin, { queryClient }]] },
+        });
+        await flushPromises();
+
+        // WS delivers order #31 and reports #1 as canonically evicted — no
+        // cache entry exists yet for ['orders', 1] (the fetch is still in
+        // flight), so this buffers #31 and records a pending-removal tombstone.
+        const ORDER_31 = { id: 31, userId: 1, total: 42, status: 'pending' };
+        MockWebSocket.latest().emit({ type: 'order-update', payload: ORDER_31, removedOrderIds: [1] });
+
+        // The HTTP fetch — sent before the eviction happened server-side —
+        // now resolves with a snapshot that still includes the evicted order #1.
+        const ORDER_1 = { id: 1, userId: 1, total: 100, status: 'completed' };
+        const ORDER_2 = { id: 2, userId: 1, total: 5, status: 'pending' };
+        resolveOrders([ORDER_1, ORDER_2]);
+        await flushPromises();
+        await flushPromises();
+
+        const orders = facade.orders.value;
+        const ids = orders.map((o) => o.id).sort((a, b) => a - b);
+        expect(ids).toEqual([2, 31]); // #1 absent, #31 present
+        expect(orders.filter((o) => o.id === 31)).toHaveLength(1); // no duplicates
+        expect(orders).toHaveLength(2); // matches canonical retained count
+      },
+    );
   });
 });

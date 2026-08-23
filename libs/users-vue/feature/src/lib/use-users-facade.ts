@@ -8,6 +8,7 @@ import {
   fetchOrdersByUser,
   useUsersStore,
   drainPendingOrders,
+  drainPendingRemovedIds,
 } from '@portal/users-vue/data-access';
 
 // Per-field refs. The VM is entirely derived, so each field is a ComputedRef —
@@ -70,22 +71,31 @@ export function useUsersFacade(): UsersFacade {
   // React's drain merge (which keeps the HTTP version on a collision), the WS
   // payload wins here since it's the more recent observation of that order;
   // pending-only orders are appended, and existing ordering is preserved.
+  //
+  // Also reconciles pending canonical-store evictions (removedOrderIds) that
+  // arrived over WS before this fetch resolved: that fetch was already in
+  // flight when the eviction happened server-side, so its result can still
+  // contain the now-evicted order (the WS-before-HTTP hydration race) —
+  // filtering removedIds out of `prev` (the fetch result) BEFORE the merge
+  // below is what closes that gap.
   watch(
     [() => ordersQuery.isSuccess.value, () => selectedUserId.value],
     ([isSuccess, userId]) => {
       if (!isSuccess || userId === null) return;
+      const removedIds = drainPendingRemovedIds(userId);
       const pending = drainPendingOrders(userId);
-      if (pending.length === 0) return;
+      if (pending.length === 0 && removedIds.size === 0) return;
       queryClient.setQueryData<Order[]>(['orders', userId], (prev) => {
         if (!prev) return pending;
+        const withoutEvicted = removedIds.size > 0 ? prev.filter((order) => !removedIds.has(order.id)) : prev;
         // Map collapses same-id duplicates within `pending` itself to the last
         // (latest) occurrence — deriving pendingOnly from its values, not the
         // raw `pending` array, is what keeps a pending-only id that arrived
         // twice over WS before this drain to exactly one order.
         const pendingById = new Map(pending.map((order) => [order.id, order]));
-        const merged = prev.map((order) => pendingById.get(order.id) ?? order);
-        const prevIds = new Set(prev.map((order) => order.id));
-        const pendingOnly = [...pendingById.values()].filter((order) => !prevIds.has(order.id));
+        const merged = withoutEvicted.map((order) => pendingById.get(order.id) ?? order);
+        const mergedIds = new Set(withoutEvicted.map((order) => order.id));
+        const pendingOnly = [...pendingById.values()].filter((order) => !mergedIds.has(order.id));
         return [...merged, ...pendingOnly];
       });
     },

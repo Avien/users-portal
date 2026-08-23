@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import Anthropic from '@anthropic-ai/sdk';
 import { mapErrorToResponse } from './business-agent-errors.ts';
-import { OrdersSnapshotError, RequestValidationError } from './business-agent-core.ts';
+import { OrdersSnapshotError, RequestValidationError, AgentMaxTurnsExceededError } from './business-agent-core.ts';
 import { BodyTooLargeError } from './business-agent-http.ts';
 
 // Builds a real Anthropic.APIError subclass instance the way the SDK itself
@@ -77,6 +77,17 @@ describe('mapErrorToResponse', () => {
     expect(JSON.stringify(body)).not.toContain('credit');
     expect(JSON.stringify(body)).not.toContain('Billing');
     expect(JSON.stringify(body)).not.toContain('Anthropic');
+  });
+
+  it('maps AgentMaxTurnsExceededError to a sanitized 500, never presenting it as a successful answer, and never exposing "MAX_TURNS" wording', () => {
+    const err = new AgentMaxTurnsExceededError('Agent did not produce a final answer within MAX_TURNS=8 turns.');
+    const { status, body } = mapErrorToResponse(err);
+    expect(status).toBe(500);
+    expect(body).toEqual({
+      error: 'agent_incomplete',
+      message: 'The business agent could not complete this request. Try rephrasing your question.',
+    });
+    expect(JSON.stringify(body)).not.toContain('MAX_TURNS');
   });
 
   it.each([

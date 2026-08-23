@@ -10,9 +10,12 @@ import {
   getConfiguredModel,
   parseAgentRequestBody,
   RequestValidationError,
+  OrdersSnapshotError,
+  AgentMaxTurnsExceededError,
   MAX_PROMPT_LENGTH,
   MAX_OUTPUT_TOKENS,
   SDK_MAX_RETRIES,
+  ORDERS_SNAPSHOT_FETCH_TIMEOUT_MS,
   type OrdersSnapshot,
   type ConversationMessage,
 } from './business-agent-core.ts';
@@ -168,6 +171,141 @@ describe('fetchOrdersSnapshot (Business Agent server)', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503 }));
     await expect(fetchOrdersSnapshot()).rejects.toThrow(/Orders data source unavailable/);
   });
+
+  describe('response shape validation — malformed backend data must not reach the agent loop', () => {
+    it.each([
+      ['missing orders entirely', { arrivals: {} }],
+      ['orders is not an array', { orders: 'not-an-array', arrivals: {} }],
+      ['missing arrivals entirely', { orders: [] }],
+      ['arrivals is not an object', { orders: [], arrivals: 'not-an-object' }],
+      ['arrivals is null', { orders: [], arrivals: null }],
+      ['body is null', null],
+      ['body is a plain string', 'unexpected'],
+      ['body is an array, not an object', []],
+    ])('rejects a malformed snapshot response (%s) as OrdersSnapshotError, not a silent pass-through', async (_label, malformed) => {
+      vi.useFakeTimers();
+      try {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => malformed }));
+        const promise = fetchOrdersSnapshot();
+        const assertion = expect(promise).rejects.toThrow(/Orders data source unavailable/);
+        // Fast-forward through the retry loop's real sleep(250)/sleep(500) backoff.
+        await vi.runAllTimersAsync();
+        await assertion;
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('accepts a well-formed snapshot unchanged', async () => {
+      const snapshot: OrdersSnapshot = { orders: MOCK_ORDERS, arrivals: { 101: 123 } };
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => snapshot }));
+      await expect(fetchOrdersSnapshot()).resolves.toEqual(snapshot);
+    });
+  });
+
+  // A real fetch() rejects with an AbortError once its signal fires — this mock
+  // reproduces exactly that contract (never resolving on its own) rather than
+  // simulating a plain rejected/thrown error, so it exercises the same code path
+  // a genuinely hung Railway request would.
+  function hangingFetchThatRespectsAbort() {
+    return vi.fn((_url: string, options?: { signal?: AbortSignal }) => {
+      return new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => {
+          const err = new Error('This operation was aborted');
+          err.name = 'AbortError';
+          reject(err);
+        });
+      });
+    });
+  }
+
+  it('bounds a hung fetch to ORDERS_SNAPSHOT_FETCH_TIMEOUT_MS instead of waiting forever', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = hangingFetchThatRespectsAbort();
+      vi.stubGlobal('fetch', fetchMock);
+
+      const promise = fetchOrdersSnapshot();
+      const assertion = expect(promise).rejects.toBeInstanceOf(OrdersSnapshotError);
+      await vi.advanceTimersByTimeAsync(ORDERS_SNAPSHOT_FETCH_TIMEOUT_MS);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('the shared deadline bounds the WHOLE call across retries, not per attempt — a hang stops retrying once aborted', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = hangingFetchThatRespectsAbort();
+      vi.stubGlobal('fetch', fetchMock);
+
+      const promise = fetchOrdersSnapshot();
+      const assertion = expect(promise).rejects.toBeInstanceOf(OrdersSnapshotError);
+      await vi.advanceTimersByTimeAsync(ORDERS_SNAPSHOT_FETCH_TIMEOUT_MS);
+      await assertion;
+
+      // One deadline, one abort, no further retry attempts after it fires —
+      // not 3 separate per-attempt timeouts.
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a deadline firing mid-retry-sleep interrupts the sleep immediately instead of waiting out the full 250/500ms backoff', async () => {
+    vi.useFakeTimers();
+    try {
+      let rejectFirstAttempt!: (err: unknown) => void;
+      const fetchMock = vi
+        .fn()
+        .mockImplementationOnce(() => new Promise((_resolve, reject) => (rejectFirstAttempt = reject)));
+      vi.stubGlobal('fetch', fetchMock);
+
+      const promise = fetchOrdersSnapshot();
+      const assertion = expect(promise).rejects.toBeInstanceOf(OrdersSnapshotError);
+
+      // Advance to just before the deadline, then fail the first attempt —
+      // pushing the retry loop into its 250ms sleep with almost no budget left.
+      await vi.advanceTimersByTimeAsync(ORDERS_SNAPSHOT_FETCH_TIMEOUT_MS - 100);
+      rejectFirstAttempt(new TypeError('fetch failed'));
+      await Promise.resolve(); // let the rejection reach the catch block and schedule sleep(250)
+
+      // Advance only the remaining 100ms to the deadline — nowhere near the
+      // full 250ms sleep. If the sleep weren't abort-aware, the promise would
+      // still be pending after this and the assertion below would time out.
+      await vi.advanceTimersByTimeAsync(100);
+      await assertion;
+
+      // The deadline interrupted the sleep before a second fetch attempt could start.
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a transient failure on the first attempt still retries normally within the deadline (timeout does not disable retries)', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ orders: [], arrivals: {} }) });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchOrdersSnapshot()).resolves.toEqual({ orders: [], arrivals: {} });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('produces no unhandled rejection from the abort signal after the promise has already settled', async () => {
+    const unhandled = vi.fn();
+    process.once('unhandledRejection', unhandled);
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ orders: [], arrivals: {} }) }));
+    await fetchOrdersSnapshot();
+
+    // Give any stray unhandled rejection a tick to surface before asserting.
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(unhandled).not.toHaveBeenCalled();
+  });
 });
 
 describe('fetchOrdersSnapshot — ORDERS_API_URL resolution', () => {
@@ -187,7 +325,7 @@ describe('fetchOrdersSnapshot — ORDERS_API_URL resolution', () => {
 
     await fetchOrdersSnapshot();
 
-    expect(fetchMock).toHaveBeenCalledWith('http://localhost:3000/api/orders-snapshot');
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:3000/api/orders-snapshot', expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 
   it('fetches from ORDERS_API_URL when set — proves the URL is resolved live on each call, not frozen at ' +
@@ -200,7 +338,7 @@ describe('fetchOrdersSnapshot — ORDERS_API_URL resolution', () => {
 
     await fetchOrdersSnapshot();
 
-    expect(fetchMock).toHaveBeenCalledWith('http://example.internal/orders-snapshot');
+    expect(fetchMock).toHaveBeenCalledWith('http://example.internal/orders-snapshot', expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 });
 
@@ -654,6 +792,32 @@ describe('runAgent orchestration (Claude API mocked)', () => {
     await expect(
       runAgent(fakeClient as unknown as Anthropic, 'q', BASE_SNAPSHOT, [], { signal: controller.signal })
     ).rejects.toBeInstanceOf(Anthropic.APIUserAbortError);
+  });
+
+  it('throws AgentMaxTurnsExceededError instead of returning a fake success when MAX_TURNS is exhausted', async () => {
+    // The model asks for a tool on every single turn, MAX_TURNS times in a
+    // row, never producing a final text answer.
+    const fakeClient = {
+      messages: {
+        stream: () => ({
+          finalMessage: async () =>
+            ({
+              stop_reason: 'tool_use',
+              content: [{ type: 'tool_use', id: 'toolu_x', name: 'searchUsers', input: {} }],
+              usage: USAGE(10, 5),
+              model: 'claude-sonnet-5',
+            }) as Anthropic.Message,
+        }),
+      },
+    };
+
+    await expect(runAgent(fakeClient as unknown as Anthropic, 'q', BASE_SNAPSHOT)).rejects.toBeInstanceOf(
+      AgentMaxTurnsExceededError
+    );
+    // The message is safe to log server-side but must never be presented as
+    // a business answer — this is a distinct thrown type, not a {answer:...}
+    // success value, which is what actually enforces that at the boundary.
+    await expect(runAgent(fakeClient as unknown as Anthropic, 'q', BASE_SNAPSHOT)).rejects.toThrow(/MAX_TURNS/);
   });
 });
 

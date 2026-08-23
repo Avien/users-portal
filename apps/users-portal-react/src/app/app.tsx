@@ -2,8 +2,11 @@ import type { CSSProperties } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { UserOrders } from '@portal/users-react/feature';
 import { useOrdersStream } from '@portal/users-react/data-access';
-import { ErrorBoundary } from '@portal/users-react/ui';
 import { BusinessAgentPanel } from '@portal/business-agent-react';
+// App-shell infrastructure, not Users/Orders domain UI — kept app-local rather
+// than in @portal/users-react/ui (a type:app project may not depend on type:ui;
+// this has no domain knowledge and only App itself ever uses it).
+import { ErrorBoundary } from './error-boundary/error-boundary';
 
 // Composed here, not inside UserOrders — the app is the composition root for two
 // independent capabilities (Users/Orders feature + Business Agent). Neither owns

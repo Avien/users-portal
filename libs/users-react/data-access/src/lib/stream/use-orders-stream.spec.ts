@@ -135,6 +135,50 @@ describe('useOrdersStream', () => {
     expect(queryClient.getQueryData<Order[]>(['orders', 1])).toEqual(existing);
   });
 
+  it('removes canonically-evicted orders before upserting the incoming order (retention propagation)', () => {
+    const { queryClient, wrapper } = makeWrapper();
+    const thirtyExisting: Order[] = Array.from({ length: 30 }, (_, i) => ({ id: i + 1, userId: 1, total: 1 }));
+    queryClient.setQueryData<Order[]>(['orders', 1], thirtyExisting);
+
+    renderHook(() => useOrdersStream(), { wrapper });
+    const NEW_ORDER: Order = { id: 999, userId: 1, total: 42 };
+    MockWebSocket.latest().emit({ type: 'order-update', payload: NEW_ORDER, removedOrderIds: [1] });
+
+    const result = queryClient.getQueryData<Order[]>(['orders', 1]);
+    expect(result).toHaveLength(30); // never grows past the canonical retained count
+    expect(result?.some((o) => o.id === 1)).toBe(false); // evicted order is absent
+    expect(result?.some((o) => o.id === 999)).toBe(true); // new order is present
+  });
+
+  it('does not remove anything when removedOrderIds is absent', () => {
+    const { queryClient, wrapper } = makeWrapper();
+    const existing: Order[] = [{ id: 101, userId: 1, total: 120 }];
+    queryClient.setQueryData<Order[]>(['orders', 1], existing);
+
+    renderHook(() => useOrdersStream(), { wrapper });
+    MockWebSocket.latest().emit({ type: 'order-update', payload: ORDER_NORMAL });
+
+    expect(queryClient.getQueryData<Order[]>(['orders', 1])).toEqual([...existing, ORDER_NORMAL]);
+  });
+
+  it('stays bounded at the canonical retained count across repeated evicting updates', () => {
+    const { queryClient, wrapper } = makeWrapper();
+    queryClient.setQueryData<Order[]>(['orders', 1], [
+      { id: 1, userId: 1, total: 1 },
+      { id: 2, userId: 1, total: 1 },
+    ]);
+
+    renderHook(() => useOrdersStream(), { wrapper });
+    const ws = MockWebSocket.latest();
+    ws.emit({ type: 'order-update', payload: { id: 1001, userId: 1, total: 1 }, removedOrderIds: [1] });
+    ws.emit({ type: 'order-update', payload: { id: 1002, userId: 1, total: 1 }, removedOrderIds: [2] });
+    ws.emit({ type: 'order-update', payload: { id: 1003, userId: 1, total: 1 }, removedOrderIds: [1001] });
+
+    const result = queryClient.getQueryData<Order[]>(['orders', 1]);
+    expect(result).toHaveLength(2);
+    expect(result?.map((o) => o.id).sort()).toEqual([1002, 1003]);
+  });
+
   it('buffers the order into pending when no cache exists for that user', () => {
     const { queryClient, wrapper } = makeWrapper();
     renderHook(() => useOrdersStream(), { wrapper });
@@ -143,6 +187,18 @@ describe('useOrdersStream', () => {
 
     expect(queryClient.getQueryData(['orders', ORDER_NORMAL.userId])).toBeUndefined();
     expect(drainPendingOrders(ORDER_NORMAL.userId)).toEqual([ORDER_NORMAL]);
+  });
+
+  it('prunes an evicted id out of the pending buffer too, so it can never be drained back in', () => {
+    const { wrapper } = makeWrapper();
+    renderHook(() => useOrdersStream(), { wrapper });
+    const ws = MockWebSocket.latest();
+
+    // No cache yet for user 1 — both buffer.
+    ws.emit({ type: 'order-update', payload: { id: 1, userId: 1, total: 1 } });
+    ws.emit({ type: 'order-update', payload: { id: 2, userId: 1, total: 1 }, removedOrderIds: [1] });
+
+    expect(drainPendingOrders(1)).toEqual([{ id: 2, userId: 1, total: 1 }]);
   });
 
   it('drainPendingOrders returns buffered orders then clears the buffer', () => {

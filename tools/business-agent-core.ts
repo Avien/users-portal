@@ -1,4 +1,16 @@
 import Anthropic from '@anthropic-ai/sdk';
+// Abort-aware sleep — rejects immediately when its signal fires instead of
+// waiting out the full delay (see the retry backoff in fetchOrdersSnapshot).
+import { setTimeout as sleep } from 'node:timers/promises';
+// Deliberately NOT '@portal/users/utils': Vercel's per-function bundler for
+// api/business-agent.ts builds this file in isolation and doesn't resolve
+// tsconfig.base.json's Nx path aliases, so the alias only works locally. The
+// extensionless relative path is also deliberate — an explicit .ts extension
+// here survives untranspiled into Vercel's compiled output as a literal
+// require(".../*.ts"), which Node can't resolve (a real deploy failure fixed
+// earlier; see git history for api/business-agent.ts). This is a narrow,
+// Vercel-bundling-specific exception to the shared-contract import rule, not
+// a pattern to copy elsewhere in the repo.
 import type { Order } from '../libs/users/src/index';
 import {
   MOCK_USERS,
@@ -90,9 +102,32 @@ function getOrdersSnapshotUrl(): string {
 // would let the agent give confident answers about data it can no longer prove
 // is current. ──
 
+// Bounds the WHOLE snapshot fetch — every attempt across the retry loop below,
+// not per-attempt. Before this, a hung Railway request (connects but never
+// responds) had no bound at all: the retry loop only retries on a THROWN
+// error, and this call happens before runAgent()'s own AGENT_TIMEOUT_MS clock
+// even starts — worst case, Vercel's maxDuration killed the function outright
+// with no sanitized error response. Deliberately its own budget, not shared
+// with AGENT_TIMEOUT_MS, so a slow upstream dependency can't eat into the
+// agent loop's own time to think.
+export const ORDERS_SNAPSHOT_FETCH_TIMEOUT_MS = 5_000;
+
 export interface OrdersSnapshot {
   orders: Order[];
   arrivals: Record<number, number>;
+}
+
+// Shallow structural check, same style as isConversationMessage below and the
+// widget's own isAgentResponse — not a schema library, just enough to stop a
+// malformed backend response (wrong shape, a proxy/error page that still
+// returned 200, a future breaking change to the snapshot endpoint) from
+// flowing straight into the agent loop via an unchecked `as OrdersSnapshot`
+// cast. Doesn't validate individual Order fields — that's a level of depth
+// this lightweight check deliberately doesn't attempt.
+function isOrdersSnapshot(value: unknown): value is OrdersSnapshot {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Partial<OrdersSnapshot>;
+  return Array.isArray(candidate.orders) && typeof candidate.arrivals === 'object' && candidate.arrivals !== null;
 }
 
 // A distinguishable class (not a plain Error) so the HTTP boundary can map this
@@ -101,21 +136,51 @@ export interface OrdersSnapshot {
 // dev-facing detail (e.g. "is mock:ws running?"), kept out of any HTTP response.
 export class OrdersSnapshotError extends Error {}
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+// Thrown — never returned as a normal { answer, trace, turns } success value —
+// when the tool-use loop exhausts MAX_TURNS without Claude producing a final
+// answer. This is a genuine failure to complete the request, not a business
+// answer; letting it through as a 200 with an answer field would have the
+// widget render it, store it in history, and replay it back to Claude as if
+// it were a real prior assistant turn on the next follow-up.
+export class AgentMaxTurnsExceededError extends Error {}
 
 export async function fetchOrdersSnapshot(): Promise<OrdersSnapshot> {
   const url = getOrdersSnapshotUrl();
   const retryDelaysMs = [250, 500];
+  const controller = new AbortController();
+  const deadlineId = setTimeout(() => controller.abort(), ORDERS_SNAPSHOT_FETCH_TIMEOUT_MS);
   let lastError: unknown;
-  for (let attempt = 0; attempt <= retryDelaysMs.length; attempt++) {
-    try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`Orders snapshot request failed (${res.status})`);
-      return (await res.json()) as OrdersSnapshot;
-    } catch (err) {
-      lastError = err;
-      if (attempt < retryDelaysMs.length) await sleep(retryDelaysMs[attempt]);
+  try {
+    for (let attempt = 0; attempt <= retryDelaysMs.length; attempt++) {
+      try {
+        const res = await fetch(url, { signal: controller.signal });
+        if (!res.ok) throw new Error(`Orders snapshot request failed (${res.status})`);
+        const parsed: unknown = await res.json();
+        if (!isOrdersSnapshot(parsed)) {
+          throw new Error('Orders snapshot response has an unexpected shape.');
+        }
+        return parsed;
+      } catch (err) {
+        lastError = err;
+        // Once the shared deadline has fired, every remaining attempt would
+        // also reject near-instantly on the same aborted signal — stop
+        // immediately instead of still sleeping out the retry backoff.
+        if (controller.signal.aborted) break;
+        if (attempt < retryDelaysMs.length) {
+          try {
+            // Abort-aware: if the deadline fires WHILE this sleep is in
+            // progress, it rejects immediately instead of waiting out the
+            // full 250/500ms — bounds the overrun to near-zero rather than
+            // up to the sleep's own duration.
+            await sleep(retryDelaysMs[attempt], undefined, { signal: controller.signal });
+          } catch {
+            break;
+          }
+        }
+      }
     }
+  } finally {
+    clearTimeout(deadlineId);
   }
   const reason = lastError instanceof Error ? lastError.message : String(lastError);
   throw new OrdersSnapshotError(
@@ -416,5 +481,7 @@ export const runAgent = async (
     messages.push({ role: 'user', content: results });
   }
 
-  return { answer: '(hit MAX_TURNS without a final answer)', trace, turns: MAX_TURNS, usage };
+  throw new AgentMaxTurnsExceededError(
+    `Agent did not produce a final answer within MAX_TURNS=${MAX_TURNS} turns.`
+  );
 };

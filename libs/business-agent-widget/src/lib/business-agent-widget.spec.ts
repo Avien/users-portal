@@ -134,6 +134,7 @@ describe('BusinessAgentWidget', () => {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ prompt: 'How much has Dana spent?', history: [] }),
+        signal: expect.any(AbortSignal),
       });
     });
 
@@ -281,6 +282,67 @@ describe('BusinessAgentWidget', () => {
 
       expect(status.textContent).toBe('"prompt" is required');
       expect(onError.mock.calls[0][0].detail).toEqual({ prompt: 'anything', error: '"prompt" is required' });
+    });
+
+    it('prefers the human-readable message over the machine-oriented error code when both are present', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: false,
+          status: 503,
+          json: async () => ({ error: 'service_unavailable', message: 'The business agent is temporarily unavailable.' }),
+        })
+      );
+
+      const el = mount();
+      await submit(el, 'anything');
+      const { status } = shadow(el);
+      await vi.waitFor(() => expect(status.dataset['state']).toBe('error'));
+
+      expect(status.textContent).toBe('The business agent is temporarily unavailable.');
+    });
+
+    it('falls back to a generic status-based message when the error body has neither message nor error', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) }));
+
+      const el = mount();
+      await submit(el, 'anything');
+      const { status } = shadow(el);
+      await vi.waitFor(() => expect(status.dataset['state']).toBe('error'));
+
+      expect(status.textContent).toBe('Request failed (500)');
+    });
+
+    it('falls back to a generic status-based message when the error response body is not valid JSON (e.g. a platform/firewall HTML page)', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: false,
+          status: 429,
+          json: async () => {
+            throw new SyntaxError('Unexpected token < in JSON at position 0');
+          },
+        })
+      );
+
+      const el = mount();
+      await submit(el, 'anything');
+      const { status } = shadow(el);
+      await vi.waitFor(() => expect(status.dataset['state']).toBe('error'));
+
+      // Never the raw JSON.parse error text.
+      expect(status.textContent).toBe('Request failed (429)');
+    });
+
+    it('a successful response still requires the strict {answer, trace, turns} shape even with the safer body parsing', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ answer: 'missing trace/turns' }) }));
+
+      const el = mount();
+      await submit(el, 'anything');
+      const { status } = shadow(el);
+      await vi.waitFor(() => expect(status.dataset['state']).toBe('error'));
+
+      expect(status.textContent).toContain('Malformed response');
     });
 
     it('handles a rejected fetch (real Error) safely', async () => {
@@ -566,6 +628,146 @@ describe('BusinessAgentWidget', () => {
       resetButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
       expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    describe('vs. an in-flight request (race)', () => {
+      // Mirrors what a real fetch() does once its AbortSignal fires — the mock
+      // never resolves on its own, only rejects when the signal it was given
+      // is aborted (by reset, by unmount, or by a newer Ask).
+      function abortAwareFetchMock() {
+        return vi.fn((_url: string, options?: { signal?: AbortSignal }) => {
+          return new Promise<FakeResponse>((_resolve, reject) => {
+            options?.signal?.addEventListener('abort', () => {
+              const err = new Error('The operation was aborted.');
+              err.name = 'AbortError';
+              reject(err);
+            });
+          });
+        });
+      }
+
+      const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+      it('a response that arrives after reset must never reappear in the conversation', async () => {
+        let resolveFetch!: (res: FakeResponse) => void;
+        vi.stubGlobal('fetch', vi.fn(() => new Promise<FakeResponse>((resolve) => (resolveFetch = resolve))));
+
+        const el = mount();
+        const { resetButton } = shadow(el);
+        await submit(el, 'How much has Dana spent?');
+
+        resetButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        expect(transcriptMessages(el)).toEqual([]);
+
+        // The stale request "answers" only after the user already reset.
+        resolveFetch({ ok: true, status: 200, json: async () => ({ answer: 'stale answer', trace: [], turns: 1 }) });
+        await flush();
+        await flush();
+
+        expect(transcriptMessages(el)).toEqual([]);
+      });
+
+      it('an aborted request (superseded by reset) does not emit agent:error, unlike a real server failure', async () => {
+        vi.stubGlobal('fetch', abortAwareFetchMock());
+        const errorListener = vi.fn();
+
+        const el = mount();
+        el.addEventListener(BUSINESS_AGENT_ERROR_EVENT, errorListener);
+        const { resetButton, status } = shadow(el);
+        await submit(el, 'How much has Dana spent?');
+
+        resetButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); // aborts the in-flight request
+        await flush();
+        await flush();
+
+        expect(errorListener).not.toHaveBeenCalled();
+        expect(status.dataset['state']).toBeUndefined();
+        expect(status.textContent).toBe('');
+      });
+
+      it('a new Ask after reset submits and completes normally', async () => {
+        const fetchMock = vi.fn();
+        fetchMock.mockImplementationOnce(abortAwareFetchMock());
+        fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ answer: 'fresh answer', trace: [], turns: 1 }) });
+        vi.stubGlobal('fetch', fetchMock);
+
+        const el = mount();
+        const { resetButton, button } = shadow(el);
+        await submit(el, 'first question');
+        expect(button.disabled).toBe(true);
+
+        resetButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        expect(button.disabled).toBe(false); // reset re-enables the button, not just a settled promise
+
+        await submit(el, 'second question');
+        await vi.waitFor(() => expect(transcriptMessages(el)).toHaveLength(2));
+        expect(transcriptMessages(el)).toEqual([
+          { role: 'user', text: 'second question' },
+          { role: 'assistant', text: 'fresh answer' },
+        ]);
+      });
+
+      it('history stays empty after reset until the next request actually completes', async () => {
+        let resolveFetch!: (res: FakeResponse) => void;
+        const fetchMock = vi.fn(() => new Promise<FakeResponse>((resolve) => (resolveFetch = resolve)));
+        vi.stubGlobal('fetch', fetchMock);
+
+        const el = mount();
+        const { resetButton } = shadow(el);
+        await submit(el, 'first question');
+
+        resetButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        expect(transcriptMessages(el)).toEqual([]);
+
+        await submit(el, 'second question');
+        // Still empty while the new request is pending — only its own success populates it.
+        expect(transcriptMessages(el)).toEqual([]);
+        const secondCallBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+        expect(secondCallBody.history).toEqual([]);
+
+        resolveFetch({ ok: true, status: 200, json: async () => ({ answer: 'answer', trace: [], turns: 1 }) });
+        await vi.waitFor(() => expect(transcriptMessages(el)).toHaveLength(2));
+      });
+
+      it('unmounting the widget aborts an in-flight request so its late resolution cannot throw or touch a detached element', async () => {
+        vi.stubGlobal('fetch', abortAwareFetchMock());
+        const el = mount();
+        await submit(el, 'How much has Dana spent?');
+
+        expect(() => el.remove()).not.toThrow();
+        await flush();
+        await flush();
+        // No assertion beyond "did not throw" — a detached widget has nothing
+        // left to observe, this just proves the abort path is exercised safely.
+      });
+
+      it('the Ask button stays disabled while a newer request is still pending, even after a request superseded by reset finishes settling its abort', async () => {
+        const fetchMock = vi.fn();
+        fetchMock.mockImplementationOnce(abortAwareFetchMock()); // A — rejects once aborted
+        let resolveB!: (res: FakeResponse) => void;
+        fetchMock.mockImplementationOnce(() => new Promise<FakeResponse>((resolve) => (resolveB = resolve))); // B — resolves manually
+        vi.stubGlobal('fetch', fetchMock);
+
+        const el = mount();
+        const { resetButton, button } = shadow(el);
+
+        await submit(el, 'first question'); // A pending
+        expect(button.disabled).toBe(true);
+
+        resetButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); // aborts A
+        await submit(el, 'second question'); // B starts immediately after reset
+        expect(button.disabled).toBe(true); // B is now in flight
+
+        // Let A's aborted fetch promise actually settle and run its catch/finally
+        // — the exact race: A's finally must not blindly re-enable the button
+        // while B is still genuinely pending.
+        await flush();
+        await flush();
+        expect(button.disabled).toBe(true);
+
+        resolveB({ ok: true, status: 200, json: async () => ({ answer: 'B answer', trace: [], turns: 1 }) });
+        await vi.waitFor(() => expect(button.disabled).toBe(false));
+      });
     });
   });
 });

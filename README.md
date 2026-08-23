@@ -47,13 +47,13 @@ The UI lists users and their orders. Selecting a user loads orders lazily with p
 - **Warning** — a newly streamed order crosses the high-value threshold (`>= $500`)
 - **Critical** — the same user receives multiple new streamed orders within a 2-minute burst window
 - **Noise control** — bulk API hydration is ignored to avoid toast spam; only streamed events trigger toasts
-- Pure detection logic (`reduceOrderMonitoring`) lives in the shared `@portal/users/utils` lib — both facades run the same rule, wire it to their own state layer (NgRx effect vs Zustand action)
+- Pure detection logic (`reduceOrderMonitoring`) lives in the shared `@portal/users/utils` lib — all three facades run the same rule, wiring it to their own state layer (NgRx effect / Zustand action / Pinia action)
 
 **Try it locally:**
 ```bash
 npm run mock:ws && npm run start:react
 ```
-On connect, the mock server immediately emits two orders for the same user (~0.5s/~1.5s in) to trigger the critical burst toast without waiting for the random stream. In production the same server runs persistently on Railway; Angular and React each read its URL from their own environment config.
+On connect, the mock server immediately emits three orders for the same user (~0.5s/~1.5s/~2.5s in) — the first is swallowed by the monitoring rule's own learning tick, the second (>= $500) triggers the warning toast, the third triggers the critical burst toast — without waiting for the random stream. This burst is scheduled once per server process (the first WS connection to arrive triggers it, not every connection), same as the ongoing random order generation — connecting a second tab/framework does not cause more orders to be generated. In production the same server runs persistently on Railway; Angular and React each read its URL from their own environment config — Vue's own client does the same (see [docs/roadmap.md](docs/roadmap.md) for Vue's overall status, which is still an in-progress initiative, not an officially completed production implementation).
 
 ## 🗄️ Canonical Orders Store
 
@@ -72,6 +72,8 @@ Every reader of Orders data — each frontend's initial load, the WebSocket stre
 ```
 
 `tools/mock-orders-ws-server.mjs` owns the one canonical, in-memory order store — module-scope, shared across every connection, and the single origin for every order in the system, including ones generated after startup (the same file runs on Railway in production). Each frontend's initial load reads `GET /api/orders` (the current `Order[]`); `WS /orders` then pushes incremental updates to connected frontends. The Business Agent reads a separate `GET /api/orders-snapshot` endpoint — the same canonical store, bundled with the arrival-timestamp metadata its monitoring tools need. Without this, a browser refresh after new orders arrived would show stale mock-only data while the agent saw a different picture (or vice versa) — reading from one shared source is what keeps them in sync.
+
+The store retains the latest 30 orders per user (`tools/orders-store.mjs`) — a small, demo-appropriate bound so a long-lived Railway process doesn't grow every reader's payload (and the Business Agent's token usage) unboundedly. Retention is centralized at the store itself, so `GET /api/orders`, `GET /api/orders-snapshot`, and every WS consumer always see the exact same retained set — newest orders always win, oldest are pruned (along with their arrival metadata) once a user crosses the cap.
 
 ## 🤖 LLM-Powered Business Agent
 

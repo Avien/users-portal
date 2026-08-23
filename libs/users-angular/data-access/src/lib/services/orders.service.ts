@@ -1,11 +1,11 @@
 import { inject, Injectable, InjectionToken } from '@angular/core';
 import { filter, Observable, map } from 'rxjs';
 import { webSocket } from 'rxjs/webSocket';
-import { Order, DEFAULT_ORDERS_WS_URL, DEFAULT_ORDERS_API_URL } from '@portal/users/utils';
+import { Order, OrderStreamEvent, DEFAULT_ORDERS_WS_URL, DEFAULT_ORDERS_API_URL } from '@portal/users/utils';
 
-interface OrderStreamEvent {
-  type: 'order-update';
-  payload: Order;
+export interface OrderStreamUpdate {
+  order: Order;
+  removedOrderIds: number[];
 }
 
 /** Override in tests or `app.config` when the mock server URL differs. */
@@ -26,8 +26,8 @@ export class OrdersService {
   private readonly url = inject(ORDERS_SOCKET_URL);
   private stream$ = webSocket<OrderStreamEvent>(this.url);
 
-  public ordersUpdates$: Observable<Order> = this.stream$.pipe(
+  public ordersUpdates$: Observable<OrderStreamUpdate> = this.stream$.pipe(
     filter((event: OrderStreamEvent) => event.type === 'order-update'),
-    map((event: OrderStreamEvent) => event.payload)
+    map((event: OrderStreamEvent) => ({ order: event.payload, removedOrderIds: event.removedOrderIds ?? [] }))
   );
 }

@@ -78,3 +78,21 @@ jobs:
             nx-vue-${{ runner.os }}-
 
       - run: npm run validate:vue
+
+  validate-business-agent:
+    name: Validate Business Agent
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Pure vitest, no Nx projects involved (these are root-level tools/*.ts
+      # and api/*.ts files, not Nx-tagged libs) — no Nx computation cache step
+      # needed here, unlike the three jobs above.
+      - run: npm run validate:business-agent

@@ -32,6 +32,18 @@ function toErrorMessage(err: unknown): string {
   }
 }
 
+// Prefers the safe, human-readable `message` field over the machine-oriented
+// `error` code (e.g. "service_unavailable") — see tools/business-agent-errors.ts's
+// SanitizedErrorResponse shape, which always sets both. Falls back to `error`
+// only if `message` is missing (an older/different error shape), then to a
+// generic status-based message if the body has neither (or isn't JSON at all).
+function extractErrorMessage(body: unknown, status: number): string {
+  const candidate = body as { message?: unknown; error?: unknown } | null | undefined;
+  if (typeof candidate?.message === 'string' && candidate.message.length > 0) return candidate.message;
+  if (typeof candidate?.error === 'string' && candidate.error.length > 0) return candidate.error;
+  return `Request failed (${status})`;
+}
+
 // Shallow validation of the fields the public event contract promises — no
 // per-trace-item validation, no runtime schema library, just what's needed to
 // avoid emitting agent:answer with a shape that doesn't match AgentAnswerEventDetail.
@@ -60,6 +72,23 @@ export class BusinessAgentWidget extends HTMLElement {
   // single source of truth for both what gets POSTed as `history` and what the
   // transcript below renders — no separate render-only copy of the conversation.
   private history: ConversationMessage[] = [];
+
+  // Every request currently in flight — plural deliberately: the widget does
+  // NOT cancel a request just because a newer Ask started (multiple in-flight
+  // Asks resolving independently, each appending to history in resolution
+  // order, is normal, pre-existing, already-tested behavior — the submit
+  // button being disabled is what normally prevents this via real UI, not
+  // this class). Only "Start new conversation" and unmount abort every
+  // request tracked here.
+  private readonly inFlightControllers = new Set<AbortController>();
+
+  // Incremented ONLY by a reset — NOT by starting a new Ask. Each request
+  // captures the generation it started in and checks it again on completion,
+  // so a request whose conversation was reset out from under it can never
+  // mutate the (new, cleared) history/transcript/status after the fact, even
+  // in the narrow window between abort() firing and the fetch promise
+  // actually rejecting/resolving.
+  private conversationGeneration = 0;
 
   constructor() {
     super();
@@ -158,12 +187,24 @@ export class BusinessAgentWidget extends HTMLElement {
   disconnectedCallback() {
     this.form.removeEventListener('submit', this.handleSubmit);
     this.resetButton.removeEventListener('click', this.handleReset);
+    // An unmounted widget must not let a still-in-flight request touch it
+    // once it (eventually) settles — same reasoning as the reset case below.
+    this.abortInFlightRequests();
+  }
+
+  private abortInFlightRequests() {
+    for (const controller of this.inFlightControllers) controller.abort();
+    this.inFlightControllers.clear();
   }
 
   private readonly handleSubmit = async (event: SubmitEvent) => {
     event.preventDefault();
     const prompt = this.input.value.trim();
     if (!prompt) return;
+
+    const controller = new AbortController();
+    const generation = this.conversationGeneration;
+    this.inFlightControllers.add(controller);
 
     this.submitButton.disabled = true;
     this.statusEl.dataset['state'] = 'loading';
@@ -174,21 +215,52 @@ export class BusinessAgentWidget extends HTMLElement {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ prompt, history: this.history }),
+        signal: controller.signal,
       });
-      const body = await res.json();
+      // A platform/firewall layer in front of the server (Vercel's own error
+      // pages, a WAF block page) can return an HTML/text body instead of JSON
+      // on a non-2xx response — this falls through to extractErrorMessage's
+      // generic "Request failed (n)" instead of a raw JSON.parse error.
+      // Inlined rather than a separate async helper: that adds a microtask
+      // tick before `body` is available, which shifts timing callers rely on.
+      let body: unknown;
+      try {
+        body = await res.json();
+      } catch {
+        body = null;
+      }
       if (!res.ok) {
-        throw new Error(typeof body?.error === 'string' ? body.error : `Request failed (${res.status})`);
+        throw new Error(extractErrorMessage(body, res.status));
       }
       if (!isAgentResponse(body)) {
         throw new Error('Malformed response: expected { answer: string, trace: array, turns: number }.');
       }
+      // "Start new conversation" may have reset the conversation while this
+      // request was in flight — a stale response must never mutate a
+      // conversation the user already cleared.
+      if (this.conversationGeneration !== generation) return;
       this.renderAnswer(body, prompt);
     } catch (err) {
+      // Aborted by reset/unmount — not a real server failure, so it must not
+      // surface as one (no error UI, no agent:error event).
+      if (controller.signal.aborted) return;
+      if (this.conversationGeneration !== generation) return;
       this.renderError(toErrorMessage(err), prompt);
     } finally {
-      this.submitButton.disabled = false;
+      this.inFlightControllers.delete(controller);
+      // NOT an unconditional `= false`: if this request was superseded by a
+      // reset immediately followed by a new Ask (A pending -> reset -> abort
+      // A -> button enabled -> submit B -> button disabled -> A's aborted
+      // fetch promise finally settles), A's own finally must not blindly
+      // re-enable the button while B is still genuinely in flight — it
+      // reflects the actual current in-flight set instead.
+      this.updateSubmitButtonDisabledState();
     }
   };
+
+  private updateSubmitButtonDisabledState() {
+    this.submitButton.disabled = this.inFlightControllers.size > 0;
+  }
 
   private renderAnswer(response: AgentResponse, prompt: string) {
     // Only a successful exchange extends history — a failed request never
@@ -258,9 +330,19 @@ export class BusinessAgentWidget extends HTMLElement {
   // Bound as a class field (not a prototype method) so add/removeEventListener
   // in connected/disconnectedCallback reference the same function identity.
   private readonly handleReset = () => {
+    // Bumping the generation (not just aborting) is what makes an
+    // already-settled-but-not-yet-processed response stale too — abort() alone
+    // can't undo a response that already arrived.
+    this.abortInFlightRequests();
+    this.conversationGeneration += 1;
     this.history = [];
     this.renderTranscript();
     this.input.value = '';
+    // abortInFlightRequests() just cleared the in-flight set, so this is
+    // always false here — using the same helper as handleSubmit's finally
+    // keeps "is anything in flight" a single source of truth rather than two
+    // places independently assuming the set's state.
+    this.updateSubmitButtonDisabledState();
     delete this.statusEl.dataset['state'];
     this.statusEl.textContent = '';
   };

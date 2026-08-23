@@ -7,6 +7,14 @@
 // is the pre-existing seed-data duplication already present in this file before
 // this change; not introduced or fixed here.
 
+// Demo-scale bounded retention — a long-lived Railway process would otherwise
+// accumulate synthetic orders forever, growing every reader unboundedly: the
+// frontend's GET /api/orders payload, the Business Agent's tool_result content
+// sent back into Claude (real input-token cost), and Railway's own memory. A
+// tiny count-based cap is sufficient for a demo (no TTL/DB/Redis needed) — see
+// docs/business-agent.md's "Demo-scale simplifications" section.
+export const MAX_ORDERS_PER_USER = 30;
+
 const BASE_ORDERS = [
   { id: 101, userId: 1, total: 120.5, status: 'completed' },
   { id: 102, userId: 1, total: 79.9, status: 'pending' },
@@ -29,9 +37,37 @@ export function createOrdersStore(seedOrders = []) {
   // operational/monitoring bookkeeping, not part of the Order domain contract.
   const arrivedAtByOrderId = new Map();
 
+  // Returns which (if any) of this user's previously-retained orders were
+  // just evicted by this insert — callers (the WS broadcaster) MUST propagate
+  // this to already-connected clients, or their local state silently grows
+  // past MAX_ORDERS_PER_USER forever while GET /api/orders, GET
+  // /api/orders-snapshot, and a fresh page load all correctly stay at the cap.
+  // Retention is enforced centrally here — no client re-implements it.
   function addOrder(order) {
     orders.set(order.id, { ...order });
     arrivedAtByOrderId.set(order.id, Date.now());
+    const evictedOrderIds = pruneOldestForUser(order.userId);
+    return { evictedOrderIds };
+  }
+
+  // Newest-wins, per-user retention. `orders` is a Map — insertion order is
+  // preserved for existing keys, and every order in this system is inserted
+  // exactly once with a freshly-allocated id (see allocateNewId in
+  // tools/mock-orders-ws-server.mjs; nothing re-inserts an existing id), so
+  // Map iteration order IS arrival order — no separate timestamp sort needed.
+  // Pruning removes only the oldest excess for THIS user; other users' orders,
+  // and their retained counts, are untouched. Returns the evicted ids (empty
+  // array when nothing needed pruning) so the caller can propagate them.
+  function pruneOldestForUser(userId) {
+    const idsForUser = [...orders.values()].filter((o) => o.userId === userId).map((o) => o.id);
+    const excess = idsForUser.length - MAX_ORDERS_PER_USER;
+    if (excess <= 0) return [];
+    const evicted = idsForUser.slice(0, excess);
+    for (const id of evicted) {
+      orders.delete(id);
+      arrivedAtByOrderId.delete(id);
+    }
+    return evicted;
   }
 
   function getOrders() {

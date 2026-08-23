@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 // Extensionless relative imports — this file is bundled by Vercel's builder as
 // part of api/business-agent.ts's dependency graph; see the comment there for
 // why (a real Preview deployment failure, not a style choice).
-import { OrdersSnapshotError, RequestValidationError } from './business-agent-core';
+import { OrdersSnapshotError, RequestValidationError, AgentMaxTurnsExceededError } from './business-agent-core';
 import { BodyTooLargeError } from './business-agent-http';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,6 +55,15 @@ export function mapErrorToResponse(err: unknown): SanitizedErrorResponse {
   }
   if (err instanceof OrdersSnapshotError) {
     return { status: 503, body: { error: 'service_unavailable', message: 'Unable to retrieve current business data.' } };
+  }
+  // MAX_TURNS exhausted without a final answer — a genuine failure to
+  // complete the request, not a business answer to hand back as a 200.
+  // Deliberately doesn't mention "MAX_TURNS" or turn counts to the caller.
+  if (err instanceof AgentMaxTurnsExceededError) {
+    return {
+      status: 500,
+      body: { error: 'agent_incomplete', message: 'The business agent could not complete this request. Try rephrasing your question.' },
+    };
   }
   // Every other Anthropic/provider API failure, including the real observed
   // insufficient-credit case (400 invalid_request_error) — see the module

@@ -75,7 +75,7 @@ export class UsersEffects {
 
   ordersUpdatedFromStream$ = createEffect(() => {
     return this.ordersService.ordersUpdates$.pipe(
-      map((order) => UsersActions.ordersUpdatedFromStream({ order })),
+      map(({ order, removedOrderIds }) => UsersActions.ordersUpdatedFromStream({ order, removedOrderIds })),
       catchError(() => EMPTY)
     );
   });

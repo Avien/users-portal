@@ -2,6 +2,7 @@ export * from './lib/constants/user.constants';
 export * from './lib/models/users-facade.interactions';
 export * from './lib/models/app-state.interface';
 export * from './lib/models/order.interface';
+export * from './lib/models/order-stream.event';
 export * from './lib/models/orders-state.interface';
 export * from './lib/models/user-orders.vm';
 export * from './lib/models/user-order.summary';
