@@ -130,3 +130,62 @@ Every `project.json` carries a `framework:` tag used by ESLint `@nx/enforce-modu
 | `framework:shared` | `users-utils` |
 
 The existing `type:` tags (app, feature, data-access, ui, utils) enforce layer direction for both frameworks simultaneously.
+
+---
+
+## Claude Model Selection
+
+Model choice should be deliberate, not reflexive. Default to Sonnet 5; escalate only when the reasoning itself — not the task's size or file count — warrants it.
+
+### Sonnet 5 — default
+
+The normal model for repository work: ordinary implementation once architecture is agreed, small/medium bug fixes, adding/updating tests, routine refactors within established boundaries, README/docs/comments, type/lint/build fixes, repo/file inspection, straightforward debugging, implementing an already-approved plan, routine framework-adapter work, and configuration changes whose desired behavior is already unambiguous.
+
+Do not escalate merely because a task is large, touches many files, or the word "architecture" appears.
+
+### Opus 5 — difficult engineering / architecture
+
+Use when deeper reasoning can materially reduce architectural or correctness risk: choosing between materially different architecture approaches, Senior/Staff/Principal-level architecture review, changing public contracts, cross-framework architecture decisions, Nx/library boundary decisions, difficult Angular/React/Vue state-flow problems, subtle HTTP/WebSocket race/concurrency problems, Module Federation / Hybrid MFE architecture issues, LLM agent-loop or tool-contract design, security-boundary decisions, Preview/Production deployment-topology decisions, difficult bugs with unclear root cause, or reviewing whether an implementation drifted from this repo's established architecture.
+
+Escalate because the reasoning is difficult or consequential — not because the task touches many files.
+
+### Fable 5 — rare, whole-system / adversarial review
+
+Reserve for unusually broad or difficult whole-system reasoning: a final adversarial review of a major PR before merge, reviewing the complete system from scratch for hidden flaws, challenging architecture assumptions established earlier, tracing subtle interactions across frontend state / backend state / WebSockets / MFE / deployment / security / LLM agent behavior, exceptionally difficult problems Sonnet/Opus haven't resolved, or long-horizon Principal-Architect analysis across many subsystems.
+
+Not for normal coding, routine tests, docs, simple bug fixes, mechanical refactors, or straightforward implementation — this is an occasional independent deep-review model, not an implementation default. For an adversarial review, default to **report-only**: inspect, challenge assumptions, classify findings, and don't modify code unless explicitly approved afterward.
+
+### Haiku 4.5 — lightweight only
+
+Use only when speed matters more than depth: simple searches, trivial text/formatting edits, obvious repetitive transformations, quick explanations, small mechanical tasks. Never for architecture, security, concurrency, state consistency, agent design, deployment topology, substantial debugging, or meaningful code review.
+
+### Escalation flow
+
+```
+Sonnet 5 → (meaningful ambiguity / difficult engineering / architectural risk) → Opus 5
+        → (exceptionally difficult whole-system problem or final adversarial audit) → Fable 5
+```
+
+Escalate based on reasoning difficulty, ambiguity, architectural impact, correctness/security risk, and the cost of getting the decision wrong — never merely because the task is long, touches many files, or "sounds architectural."
+
+### Switching models mid-task
+
+If the current task materially deserves a stronger model than the one active:
+1. Continue routine/non-consequential inspection until the next natural decision boundary — don't interrupt mid-command.
+2. At that boundary, say briefly: *"I recommend switching from `<current model>` to `<recommended model>` for the next step because `<specific reason>`."*
+3. Wait for the switch before the next consequential architectural/implementation decision.
+
+If the current model is sufficient, don't discuss model choice at all — and don't repeatedly remind which model is active.
+
+### Project-specific examples
+
+| Model | Example tasks in this repo |
+|---|---|
+| Sonnet 5 | Business Agent docs, README updates, straightforward unit tests, comment fixes, implementing an already-approved solution, normal Angular/React/Vue adapter changes, implementing an already-approved bounded demo-order retention rule |
+| Opus 5 | Deciding retention count-based vs. TTL vs. persistence, difficult REST/WS race analysis, changing the shared Web Component's public contract, changing Business Agent tool architecture, changing MFE host/remote architecture, changing Preview/Production deployment topology, security-sensitive design choices, Senior Architect review of a substantial feature |
+| Fable 5 | Final adversarial review of a large PR, a "what did the previous reviews miss?" whole-system audit, independent challenge of assumptions across the entire architecture |
+| Haiku 4.5 | Trivial searches, simple mechanical edits, low-risk repetitive changes |
+
+### Model choice does not change permission rules
+
+A stronger model is not license to redesign approved architecture, introduce new frameworks/services/dependencies/infrastructure, change public contracts, weaken security, alter deployment topology, modify external/persistent data, commit/push/merge/rebase/reset/force-push, make paid external API calls beyond approved verification, or broaden feature scope. Routine commands required by an already-approved plan proceed without command-by-command permission; consequential architectural/product/security/deployment decisions still require explicit approval, regardless of which model is active.
