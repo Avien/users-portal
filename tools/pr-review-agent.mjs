@@ -24,7 +24,7 @@ import { formatReviewOutput } from './pr-review-format.mjs';
 // ─────────────────────────────────────────────────────────────────────────────
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const MAX_DIFF_CHARS = 300_000; // keep the request well inside the context window
+const MAX_DIFF_CHARS = 500_000; // review-policy/safety bound, not a model context limit
 const MARKER = '<!-- architecture-review-bot -->';
 
 const args = process.argv.slice(2);

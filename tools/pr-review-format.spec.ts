@@ -8,7 +8,7 @@ describe('formatReviewOutput', () => {
     const { output, exitCode } = formatReviewOutput({
       review: '✅ No architecture drift found.',
       truncated: false,
-      maxDiffChars: 300_000,
+      maxDiffChars: 500_000,
       marker: MARKER,
     });
     expect(exitCode).toBe(0);
@@ -19,7 +19,7 @@ describe('formatReviewOutput', () => {
     const { output, exitCode } = formatReviewOutput({
       review: '⚠️ 1 issue(s) found:\n- **foo.ts:1** — bad import.',
       truncated: false,
-      maxDiffChars: 300_000,
+      maxDiffChars: 500_000,
       marker: MARKER,
     });
     expect(exitCode).toBe(1);
@@ -30,12 +30,12 @@ describe('formatReviewOutput', () => {
     const { output, exitCode } = formatReviewOutput({
       review: '✅ No architecture drift found.',
       truncated: true,
-      maxDiffChars: 300_000,
+      maxDiffChars: 500_000,
       marker: MARKER,
     });
     expect(exitCode).toBe(1);
     expect(output).toContain('Review INCOMPLETE');
-    expect(output).toContain('300,000');
+    expect(output).toContain('500,000');
     // the underlying (unreliable) model verdict is still preserved for context
     expect(output).toContain('✅ No architecture drift found.');
   });
@@ -44,7 +44,7 @@ describe('formatReviewOutput', () => {
     const { exitCode } = formatReviewOutput({
       review: '⚠️ 2 issue(s) found:\n- **bar.ts:2** — boundary violation.',
       truncated: true,
-      maxDiffChars: 300_000,
+      maxDiffChars: 500_000,
       marker: MARKER,
     });
     expect(exitCode).toBe(1);
@@ -54,7 +54,7 @@ describe('formatReviewOutput', () => {
     const { output, exitCode } = formatReviewOutput({
       review: '',
       truncated: false,
-      maxDiffChars: 300_000,
+      maxDiffChars: 500_000,
       marker: MARKER,
     });
     expect(exitCode).toBe(1);
@@ -66,7 +66,7 @@ describe('formatReviewOutput', () => {
     const { output, exitCode } = formatReviewOutput({
       review: '   \n\t  ',
       truncated: false,
-      maxDiffChars: 300_000,
+      maxDiffChars: 500_000,
       marker: MARKER,
     });
     expect(exitCode).toBe(1);
@@ -80,7 +80,7 @@ describe('formatReviewOutput', () => {
     const { output, exitCode } = formatReviewOutput({
       review: '',
       truncated: true,
-      maxDiffChars: 300_000,
+      maxDiffChars: 500_000,
       marker: MARKER,
     });
     expect(exitCode).toBe(1);
