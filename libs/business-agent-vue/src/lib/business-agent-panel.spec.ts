@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import BusinessAgentPanel from './BusinessAgentPanel.vue';
+import BusinessAgentPanel from './business-agent-panel.vue';
 
 afterEach(() => {
   vi.unstubAllEnvs();

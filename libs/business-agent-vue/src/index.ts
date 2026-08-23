@@ -1,1 +1,1 @@
-export { default as BusinessAgentPanel } from './lib/BusinessAgentPanel.vue';
+export { default as BusinessAgentPanel } from './lib/business-agent-panel.vue';
