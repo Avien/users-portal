@@ -10,9 +10,31 @@
 
 import { BUSINESS_AGENT_ANSWER_EVENT, BUSINESS_AGENT_ERROR_EVENT } from './business-agent-widget.events';
 import type { AgentAnswerEventDetail, AgentErrorEventDetail, ConversationMessage } from './business-agent-widget.events';
+import { buildSafeMarkdownFragment } from './safe-markdown';
 
 const TAG_NAME = 'business-agent-widget';
 const DEFAULT_ENDPOINT = '/api/business-agent';
+
+// Matches the backend's actual retention cap (tools/orders-store.mjs's
+// MAX_ORDERS_PER_USER) and the agent's own tool-contract wording
+// (tools/business-agent-core.ts) — kept in sync by hand, the same
+// independent-duplication rationale as MAX_HISTORY_MESSAGE_LENGTH below (this
+// is browser code; that's a Node tool script). Surfaced here so a user reads
+// the scope of what they're asking before they ask it, not only after an
+// answer turns out to be narrower than a "how many orders total" question
+// might imply.
+const RETAINED_ORDERS_PER_USER = 30;
+
+// Concise, meaningful example questions — deliberately NOT "Who has the most
+// orders?" or similar: every user eventually reaches the RETAINED_ORDERS_PER_USER
+// cap on a long-lived server, at which point "most orders" stops being a
+// question the retained snapshot can answer honestly. These three stay
+// meaningful regardless of how long the demo server has been running.
+const SUGGESTED_PROMPTS = [
+  'Who has the highest total value across their current orders?',
+  "What is Dana Levi's highest-value current order?",
+  'Which users need attention based on recent order activity?',
+] as const;
 
 // 3 user/assistant exchanges — enough for pronoun/follow-up resolution
 // ("his", "she", "that user"), not an attempt at long-term memory. Short-lived,
@@ -98,6 +120,7 @@ export class BusinessAgentWidget extends HTMLElement {
   private readonly resetButton: HTMLButtonElement;
   private readonly transcriptEl: HTMLElement;
   private readonly statusEl: HTMLElement;
+  private readonly suggestionsEl: HTMLElement;
 
   // Prior exchanges only — the in-flight prompt is never in here while its own
   // request is pending, only appended after a successful answer. This is the
@@ -135,6 +158,9 @@ export class BusinessAgentWidget extends HTMLElement {
         }
         h2 { margin: 0 0 0.15rem; font-size: 1.1rem; }
         .descriptor { margin: 0; font-size: 0.8rem; color: #6b7280; }
+        /* Same muted tone as .descriptor, deliberately NOT the .status[data-state='error']
+           red — this is routine scope information, not a warning. */
+        .data-scope-hint { margin: 0.2rem 0 0; font-size: 0.75rem; color: #6b7280; }
         /* Composer stays above the transcript in both DOM order and layout, so its
            vertical position never moves as the conversation grows — only the bounded,
            independently-scrollable transcript below it grows/scrolls. */
@@ -151,6 +177,13 @@ export class BusinessAgentWidget extends HTMLElement {
         button[data-variant='secondary'] {
           background: transparent; color: #0f766e; border: 1px solid #0f766e;
         }
+        .suggestions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
+        .suggestions[hidden] { display: none; }
+        button[data-variant='chip'] {
+          padding: 0.35rem 0.7rem; font-size: 0.85rem; font-weight: 400; border-radius: 999px;
+          background: #f0fdfa; color: #0f766e; border: 1px solid #99f6e4;
+        }
+        button[data-variant='chip']:hover { background: #ccfbf1; }
         .status { margin-top: 0.5rem; white-space: pre-wrap; line-height: 1.4; font-size: 0.95rem; }
         .status:empty { display: none; }
         .status[data-state='loading'] { color: #6b7280; }
@@ -172,6 +205,7 @@ export class BusinessAgentWidget extends HTMLElement {
         <div>
           <h2>LLM-Powered Business Agent</h2>
           <p class="descriptor">Claude API · Tool calling · Multi-turn context</p>
+          <p class="data-scope-hint">Answers use the current retained order snapshot — up to ${RETAINED_ORDERS_PER_USER} orders per user, not full order history.</p>
         </div>
         <button type="button" class="reset-button" data-variant="secondary" aria-label="Start new conversation">Start new conversation</button>
       </div>
@@ -179,6 +213,9 @@ export class BusinessAgentWidget extends HTMLElement {
         <input type="text" placeholder="Ask a business question…" aria-label="Business question" required />
         <button type="submit">Ask</button>
       </form>
+      <div class="suggestions" role="group" aria-label="Suggested questions">
+        ${SUGGESTED_PROMPTS.map((prompt) => `<button type="button" data-variant="chip">${prompt}</button>`).join('')}
+      </div>
       <div class="status" role="status"></div>
       <div class="transcript" aria-live="polite"></div>
     `;
@@ -188,6 +225,11 @@ export class BusinessAgentWidget extends HTMLElement {
     this.resetButton = shadow.querySelector('.reset-button') as HTMLButtonElement;
     this.transcriptEl = shadow.querySelector('.transcript') as HTMLElement;
     this.statusEl = shadow.querySelector('.status') as HTMLElement;
+    this.suggestionsEl = shadow.querySelector('.suggestions') as HTMLElement;
+    // Explicit, not just relying on the template's default (no `hidden`
+    // attribute) — this is the same source of truth updateSuggestionsVisibility
+    // uses everywhere else, so the initial state can't silently drift from it.
+    this.updateSuggestionsVisibility();
   }
 
   // Read live from the attribute (not cached) — the widget stays in sync if a
@@ -214,11 +256,16 @@ export class BusinessAgentWidget extends HTMLElement {
   connectedCallback() {
     this.form.addEventListener('submit', this.handleSubmit);
     this.resetButton.addEventListener('click', this.handleReset);
+    // One delegated listener on the container rather than one per chip — the
+    // chip set is static (SUGGESTED_PROMPTS never changes at runtime), so
+    // there's no dynamic-add/remove case that would need per-button wiring.
+    this.suggestionsEl.addEventListener('click', this.handleSuggestionClick);
   }
 
   disconnectedCallback() {
     this.form.removeEventListener('submit', this.handleSubmit);
     this.resetButton.removeEventListener('click', this.handleReset);
+    this.suggestionsEl.removeEventListener('click', this.handleSuggestionClick);
     // An unmounted widget must not let a still-in-flight request touch it
     // once it (eventually) settles — same reasoning as the reset case below.
     this.abortInFlightRequests();
@@ -294,6 +341,25 @@ export class BusinessAgentWidget extends HTMLElement {
     this.submitButton.disabled = this.inFlightControllers.size > 0;
   }
 
+  // Populates the composer only — never submits. The user still has to press
+  // "Ask" (or Enter) themselves; a chip is a starting point, not a shortcut
+  // that fires a request on their behalf.
+  private readonly handleSuggestionClick = (event: Event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLButtonElement) || target.dataset['variant'] !== 'chip') return;
+    this.input.value = target.textContent ?? '';
+    this.input.focus();
+  };
+
+  // Suggestions are a "conversation is empty" affordance (see SUGGESTED_PROMPTS'
+  // own comment on why "most orders"-style questions are excluded) — history is
+  // already the widget's single source of truth for "is there a conversation
+  // yet", so this reuses it rather than tracking a second, parallel boolean that
+  // could drift out of sync with reality.
+  private updateSuggestionsVisibility() {
+    this.suggestionsEl.hidden = this.history.length > 0;
+  }
+
   private renderAnswer(response: AgentResponse, prompt: string) {
     // Only a successful exchange extends history — a failed request never
     // reaches this method, so it can't leave a dangling user turn with no reply.
@@ -304,6 +370,7 @@ export class BusinessAgentWidget extends HTMLElement {
     ];
     this.history = updatedHistory.slice(-MAX_HISTORY_MESSAGES);
     this.renderTranscript();
+    this.updateSuggestionsVisibility();
     // Reveal the newest exchange by scrolling the bounded transcript panel itself,
     // not the host page — the composer above it must never move to bring an answer
     // into view.
@@ -337,8 +404,14 @@ export class BusinessAgentWidget extends HTMLElement {
   }
 
   // Renders `this.history` (the same array sent as `history` in the POST body)
-  // as a plain You/Agent transcript — textContent only, never innerHTML, so a
-  // malicious model answer can't inject markup (see the widget's XSS tests).
+  // as a You/Agent transcript. The assistant's message body goes through
+  // buildSafeMarkdownFragment (see safe-markdown.ts) for a small allow-listed
+  // set of formatting (bold/italic/code/lists) — that function's own module
+  // comment is the authoritative statement of why it's XSS-safe (never
+  // innerHTML, never re-parses text as markup; see safe-markdown.spec.ts's
+  // XSS suite and this file's own XSS tests). The user's own typed question
+  // is left as plain textContent — it's their own input, and there's no
+  // reason to reinterpret e.g. a literal "*" they typed as emphasis.
   // No tool trace is rendered here; that stays DEV-console-only in host apps.
   private renderTranscript() {
     this.transcriptEl.replaceChildren(
@@ -349,9 +422,13 @@ export class BusinessAgentWidget extends HTMLElement {
         const label = document.createElement('span');
         label.className = 'role-label';
         label.textContent = message.role === 'user' ? 'You' : 'Agent';
-        const body = document.createElement('p');
+        const body = document.createElement('div');
         body.className = 'message-body';
-        body.textContent = message.content;
+        if (message.role === 'assistant') {
+          body.appendChild(buildSafeMarkdownFragment(message.content));
+        } else {
+          body.textContent = message.content;
+        }
         row.append(label, body);
         return row;
       })
@@ -369,6 +446,7 @@ export class BusinessAgentWidget extends HTMLElement {
     this.conversationGeneration += 1;
     this.history = [];
     this.renderTranscript();
+    this.updateSuggestionsVisibility();
     this.input.value = '';
     // abortInFlightRequests() just cleared the in-flight set, so this is
     // always false here — using the same helper as handleSubmit's finally

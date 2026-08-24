@@ -101,6 +101,120 @@ describe('BusinessAgentWidget', () => {
     });
   });
 
+  describe('data-scope hint', () => {
+    it('keeps the existing heading unchanged', () => {
+      const root = mount().shadowRoot as ShadowRoot;
+      expect(root.querySelector('h2')?.textContent).toBe('LLM-Powered Business Agent');
+    });
+
+    it('shows concise copy explaining the retained-snapshot scope, including the 30-order cap', () => {
+      const root = mount().shadowRoot as ShadowRoot;
+      const hint = root.querySelector('.data-scope-hint');
+      expect(hint).not.toBeNull();
+      expect(hint?.textContent).toMatch(/30/);
+      expect(hint?.textContent?.toLowerCase()).toMatch(/current|retained/);
+    });
+
+    it('does not style the hint as a warning/error (not the status error color, no role="alert")', () => {
+      const el = mount();
+      const root = el.shadowRoot as ShadowRoot;
+      const hint = root.querySelector('.data-scope-hint') as HTMLElement;
+      expect(hint.getAttribute('role')).not.toBe('alert');
+      expect(hint.className).not.toMatch(/error|warning/i);
+      const css = (root.querySelector('style') as HTMLStyleElement).textContent ?? '';
+      const hintRule = css.slice(css.indexOf('.data-scope-hint {'), css.indexOf('.data-scope-hint {') + 200);
+      // #b91c1c is the widget's one error color (.status[data-state='error']) — the
+      // hint must use the same muted gray as the plain .descriptor line, not that.
+      expect(hintRule).not.toMatch(/#b91c1c/);
+    });
+  });
+
+  describe('suggested prompts', () => {
+    function chips(el: BusinessAgentWidget): HTMLButtonElement[] {
+      const root = el.shadowRoot as ShadowRoot;
+      return Array.from(root.querySelectorAll('button[data-variant="chip"]'));
+    }
+
+    it('shows exactly 3 suggestion chips while the conversation is empty, and the composer starts empty', () => {
+      const el = mount();
+      const { input, suggestions } = { ...shadow(el), suggestions: (el.shadowRoot as ShadowRoot).querySelector('.suggestions') as HTMLElement };
+      expect(input.value).toBe('');
+      expect(suggestions.hidden).toBe(false);
+      expect(chips(el)).toHaveLength(3);
+    });
+
+    it('uses retention-safe example questions, not "who has the most orders"-style questions', () => {
+      const el = mount();
+      const labels = chips(el).map((c) => c.textContent);
+      for (const label of labels) {
+        expect(label?.toLowerCase()).not.toMatch(/most orders/);
+      }
+      expect(labels).toEqual([
+        'Who has the highest total value across their current orders?',
+        "What is Dana Levi's highest-value current order?",
+        'Which users need attention based on recent order activity?',
+      ]);
+    });
+
+    it('clicking a chip populates the composer but does not submit the form', async () => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
+
+      const el = mount();
+      const { input } = shadow(el);
+      chips(el)[0].click();
+
+      expect(input.value).toBe('Who has the highest total value across their current orders?');
+      // Give any accidental submit a tick to fire before asserting it didn't.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('hides suggestions after the conversation has a first exchange', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ answer: 'answer', trace: [], turns: 1 }) })
+      );
+
+      const el = mount();
+      const suggestions = (el.shadowRoot as ShadowRoot).querySelector('.suggestions') as HTMLElement;
+      expect(suggestions.hidden).toBe(false);
+
+      await submit(el, 'a question');
+      await vi.waitFor(() => expect(suggestions.hidden).toBe(true));
+    });
+
+    it('restores suggestions on "Start new conversation"', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ answer: 'answer', trace: [], turns: 1 }) })
+      );
+
+      const el = mount();
+      const { resetButton } = shadow(el);
+      const suggestions = (el.shadowRoot as ShadowRoot).querySelector('.suggestions') as HTMLElement;
+
+      await submit(el, 'a question');
+      await vi.waitFor(() => expect(suggestions.hidden).toBe(true));
+
+      resetButton.click();
+      expect(suggestions.hidden).toBe(false);
+      expect(chips(el)).toHaveLength(3);
+    });
+
+    it('a failed request does not hide suggestions (history stays empty)', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+
+      const el = mount();
+      const suggestions = (el.shadowRoot as ShadowRoot).querySelector('.suggestions') as HTMLElement;
+      const { status } = shadow(el);
+
+      await submit(el, 'this one fails');
+      await vi.waitFor(() => expect(status.dataset['state']).toBe('error'));
+      expect(suggestions.hidden).toBe(false);
+    });
+  });
+
   describe('submitting a question', () => {
     it('shows a loading state and disables the button while the request is in flight', async () => {
       let resolveFetch!: (res: FakeResponse) => void;
@@ -505,6 +619,100 @@ describe('BusinessAgentWidget', () => {
       expect(transcript.querySelector('b')).toBeNull();
       expect(transcript.querySelector('img')).toBeNull();
       expect((window as unknown as { __pwned?: boolean }).__pwned).toBeUndefined();
+    });
+
+    describe('limited Markdown rendering for assistant answers', () => {
+      async function submitAnswer(answer: string): Promise<BusinessAgentWidget> {
+        vi.stubGlobal(
+          'fetch',
+          vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ answer, trace: [], turns: 1 }) })
+        );
+        const el = mount();
+        await submit(el, 'anything');
+        await vi.waitFor(() => expect(transcriptMessages(el)).toHaveLength(2));
+        return el;
+      }
+
+      it('renders **bold**, *italic*, and `code` as real elements, not literal asterisks/backticks', async () => {
+        const el = await submitAnswer('The total is **$655.00**, which is *unusually* high — see `getUserOrders`.');
+        const { transcript } = shadow(el);
+        const assistantBody = transcript.querySelectorAll('.message')[1].querySelector('.message-body') as HTMLElement;
+        expect(assistantBody.querySelector('strong')?.textContent).toBe('$655.00');
+        expect(assistantBody.querySelector('em')?.textContent).toBe('unusually');
+        expect(assistantBody.querySelector('code')?.textContent).toBe('getUserOrders');
+        // The flattened text has no leftover markdown syntax characters.
+        expect(assistantBody.textContent).toBe('The total is $655.00, which is unusually high — see getUserOrders.');
+      });
+
+      it('renders a Markdown list as real <ul><li> elements', async () => {
+        const el = await submitAnswer('Top orders:\n- Order #101: $655.00\n- Order #99: $410.00');
+        const { transcript } = shadow(el);
+        const assistantBody = transcript.querySelectorAll('.message')[1].querySelector('.message-body') as HTMLElement;
+        const items = Array.from(assistantBody.querySelectorAll('ul > li'));
+        expect(items.map((li) => li.textContent)).toEqual(['Order #101: $655.00', 'Order #99: $410.00']);
+      });
+
+      it('does NOT apply Markdown formatting to the user\'s own question', async () => {
+        vi.stubGlobal(
+          'fetch',
+          vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ answer: 'ok', trace: [], turns: 1 }) })
+        );
+        const el = mount();
+        await submit(el, 'Is **this** order high value?');
+        await vi.waitFor(() => expect(transcriptMessages(el)).toHaveLength(2));
+
+        const { transcript } = shadow(el);
+        const userBody = transcript.querySelectorAll('.message')[0].querySelector('.message-body') as HTMLElement;
+        expect(userBody.querySelector('strong')).toBeNull();
+        expect(userBody.textContent).toBe('Is **this** order high value?');
+      });
+
+      describe('XSS stays inert through the full submit → render path', () => {
+        it('a <script> tag in the answer is never parsed into an element', async () => {
+          const el = await submitAnswer('<script>window.__pwned = true;</script>');
+          const { transcript } = shadow(el);
+          expect(transcript.querySelector('script')).toBeNull();
+          expect(transcriptMessages(el)[1].text).toBe('<script>window.__pwned = true;</script>');
+          expect((window as unknown as { __pwned?: boolean }).__pwned).toBeUndefined();
+        });
+
+        it('an event-handler-attribute payload wrapped in bold markdown is never parsed into an element', async () => {
+          const el = await submitAnswer('**<img src=x onerror="window.__pwned = true">**');
+          const { transcript } = shadow(el);
+          expect(transcript.querySelector('img')).toBeNull();
+          expect(transcript.querySelector('[onerror]')).toBeNull();
+          const strong = transcript.querySelector('.message-body strong');
+          expect(strong?.textContent).toBe('<img src=x onerror="window.__pwned = true">');
+          expect((window as unknown as { __pwned?: boolean }).__pwned).toBeUndefined();
+        });
+
+        it('a javascript: URL payload stays inert text — link syntax is not rendered at all', async () => {
+          const el = await submitAnswer('[click me](javascript:window.__pwned=true)');
+          const { transcript } = shadow(el);
+          expect(transcript.querySelector('a')).toBeNull();
+          expect(transcriptMessages(el)[1].text).toBe('[click me](javascript:window.__pwned=true)');
+          expect((window as unknown as { __pwned?: boolean }).__pwned).toBeUndefined();
+        });
+
+        it('malformed Markdown (unterminated **) renders as literal text, not a broken/open element', async () => {
+          const el = await submitAnswer('**this bold is never closed and the rest of the answer follows');
+          const { transcript } = shadow(el);
+          expect(transcript.querySelector('strong')).toBeNull();
+          expect(transcriptMessages(el)[1].text).toBe(
+            '**this bold is never closed and the rest of the answer follows'
+          );
+        });
+
+        it('HTML embedded inside a Markdown list item is never parsed into an element', async () => {
+          const el = await submitAnswer('- <b onclick="window.__pwned=true">fake bold</b>');
+          const { transcript } = shadow(el);
+          expect(transcript.querySelector('b')).toBeNull();
+          expect(transcript.querySelector('[onclick]')).toBeNull();
+          const li = transcript.querySelector('.message-body li');
+          expect(li?.textContent).toBe('<b onclick="window.__pwned=true">fake bold</b>');
+          expect((window as unknown as { __pwned?: boolean }).__pwned).toBeUndefined();
+        });
+      });
     });
 
     it('does not add a failed exchange to the transcript, and leaves the input intact', async () => {
