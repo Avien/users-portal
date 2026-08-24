@@ -3,11 +3,13 @@
 
 This repository explores how the same frontend domain can evolve across:
 
-- Angular standalone architecture
-- Idiomatic React architecture
-- Shared framework-agnostic domain utilities
-- Cross-framework Microfrontend compositions
-- Agentic AI workflows for cross-framework architectural exploration and implementation
+- Angular standalone reference architecture
+- Idiomatic React and Vue standalone architectures
+- Shared framework-agnostic domain contracts with Nx-enforced boundaries
+- Real-time WebSocket updates over one canonical Orders backend
+- Hybrid Angular-host / React-remote Microfrontend composition with Module Federation 2.0
+- Product-facing LLM Business Agent with Claude API tool calling and multi-turn context
+- Agentic AI workflows for cross-framework architecture, implementation, and automated review
 
 > The goal is not direct framework translation, but understanding how the same architectural responsibilities map differently across rendering and state paradigms.
 > 
@@ -31,7 +33,7 @@ This repository explores how the same frontend domain can evolve across:
 
 ## 📦 Project Overview
 
-This Nx monorepo contains Angular, React, Vue, and Hybrid Microfrontend implementations of the same domain — a users-and-orders dashboard with real-time WebSocket updates, deployed as independent Vercel projects that compose at runtime via Module Federation 2.0.
+This Nx monorepo contains Angular, React, and Vue standalone implementations of the same users-and-orders domain, plus a Hybrid MFE mode where Angular hosts the React remote through Module Federation 2.0. Each standalone app is deployed independently to Vercel while all three consume the same live canonical Orders backend.
 
 | App | Stack | Purpose |
 | :--- | :--- | :--- |
