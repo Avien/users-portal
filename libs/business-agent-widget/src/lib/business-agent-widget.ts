@@ -30,9 +30,16 @@ const RETAINED_ORDERS_PER_USER = 30;
 // cap on a long-lived server, at which point "most orders" stops being a
 // question the retained snapshot can answer honestly. These three stay
 // meaningful regardless of how long the demo server has been running.
+//
+// One suggestion is deliberately in Hebrew — the same question as the first,
+// asked in a different language — so a portfolio visitor sees the agent
+// handle multilingual natural-language input immediately, without having to
+// think to try it themselves. The agent itself does no language-specific
+// handling; this only demonstrates that Claude's own natural-language
+// understanding already covers it.
 const SUGGESTED_PROMPTS = [
   'Who has the highest total value across their current orders?',
-  "What is Dana Levi's highest-value current order?",
+  'למי יש את סכום ההזמנות הכולל הגבוה ביותר כרגע?',
   'Which users need attention based on recent order activity?',
 ] as const;
 
@@ -388,14 +395,35 @@ export class BusinessAgentWidget extends HTMLElement {
     this.submitButton.disabled = this.inFlightControllers.size > 0;
   }
 
-  // Populates the composer only — never submits. The user still has to press
-  // "Ask" (or Enter) themselves; a chip is a starting point, not a shortcut
-  // that fires a request on their behalf.
+  // Populates the composer with the clicked suggestion AND submits it
+  // immediately — a suggestion is a shortcut to asking that exact question,
+  // not a composer prefill the user still has to notice and press "Ask" on.
+  // Submits via form.requestSubmit() (the same path a real Ask/Enter takes,
+  // firing the form's own 'submit' event) rather than calling handleSubmit()
+  // directly or duplicating any fetch/loading/abort logic here — every
+  // existing in-flight/disabled-button/generation/abort protection in
+  // handleSubmit applies exactly as it does for a manually typed question.
   private readonly handleSuggestionClick = (event: Event) => {
     const target = event.target;
     if (!(target instanceof HTMLButtonElement) || target.dataset['variant'] !== 'chip') return;
+    // Already dismissed by an earlier click this tick (a duplicate/stray
+    // event, or a second chip somehow still reachable) — a real browser
+    // already makes this physically unclickable once hidden, but this makes
+    // "no double submission" an explicit code guarantee, not just an
+    // incidental consequence of layout.
+    if (this.suggestionsBlockEl.hidden) return;
     this.input.value = target.textContent ?? '';
     this.input.focus();
+    // Hidden immediately, ahead of the (async) request settling — this is
+    // what makes a second click on another chip impossible (the whole block,
+    // chips included, leaves the DOM's interactive surface right away) and
+    // what "no double submission" actually rests on, together with
+    // handleSubmit's own synchronous submitButton.disabled = true. If this
+    // request fails while history is still empty, renderError below restores
+    // visibility — a failed suggestion-triggered Ask must not strand the user
+    // with neither a conversation nor the suggestions that got them here.
+    this.suggestionsBlockEl.hidden = true;
+    this.form.requestSubmit();
   };
 
   // Suggestions are a "conversation is empty" affordance (see SUGGESTED_PROMPTS'
@@ -441,6 +469,12 @@ export class BusinessAgentWidget extends HTMLElement {
     // it can't be replayed back to Claude as if it were a real prior answer.
     this.statusEl.dataset['state'] = 'error';
     this.statusEl.textContent = message;
+    // Re-derives visibility from history (still empty here, since a failure
+    // never extends it) rather than unconditionally un-hiding — a no-op for a
+    // manually typed question (suggestions were never hidden for that path to
+    // begin with), and exactly what restores them after a suggestion-triggered
+    // Ask that hid them immediately on click, then failed.
+    this.updateSuggestionsVisibility();
     this.dispatchEvent(
       new CustomEvent<AgentErrorEventDetail>(BUSINESS_AGENT_ERROR_EVENT, {
         detail: { prompt, error: message },

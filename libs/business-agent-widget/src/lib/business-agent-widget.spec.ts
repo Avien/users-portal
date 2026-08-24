@@ -214,7 +214,7 @@ describe('BusinessAgentWidget', () => {
       expect(group.getAttribute('aria-labelledby')).toBe(label?.id);
     });
 
-    it('uses retention-safe example questions, not "who has the most orders"-style questions', () => {
+    it('uses retention-safe example questions, not "who has the most orders"-style questions, and includes the Hebrew suggestion exactly as specified', () => {
       const el = mount();
       const labels = chips(el).map((c) => c.textContent);
       for (const label of labels) {
@@ -222,26 +222,102 @@ describe('BusinessAgentWidget', () => {
       }
       expect(labels).toEqual([
         'Who has the highest total value across their current orders?',
-        "What is Dana Levi's highest-value current order?",
+        'למי יש את סכום ההזמנות הכולל הגבוה ביותר כרגע?',
         'Which users need attention based on recent order activity?',
       ]);
+      // Same question as the first chip, asked in a different language — a
+      // dedicated assertion since this is the specific portfolio-facing
+      // requirement, not just an incidental array-equality check above.
+      expect(labels[1]).toBe('למי יש את סכום ההזמנות הכולל הגבוה ביותר כרגע?');
     });
 
-    it('clicking a chip populates the composer but does not submit the form', async () => {
-      const fetchMock = vi.fn();
+    it('clicking a chip populates the composer, hides suggestions immediately, and submits exactly one request — before the request even resolves', () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue({ ok: true, status: 200, json: async () => ({ answer: 'answer', trace: [], turns: 1 }) });
       vi.stubGlobal('fetch', fetchMock);
 
       const el = mount();
       const { input } = shadow(el);
-      chips(el)[0].click();
+      const block = suggestionsBlock(el);
+      const chosenChip = chips(el)[0];
+      const chosenText = chosenChip.textContent;
 
-      expect(input.value).toBe('Who has the highest total value across their current orders?');
-      // Give any accidental submit a tick to fire before asserting it didn't.
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(fetchMock).not.toHaveBeenCalled();
+      chosenChip.click();
+
+      // All synchronous, deliberately asserted before awaiting anything —
+      // this is what "immediately" means: the composer, visibility, and the
+      // request itself all happen in the same tick as the click.
+      expect(input.value).toBe(chosenText);
+      expect(block.hidden).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
-    it('hides suggestions (chips AND the label) after the conversation has a first exchange', async () => {
+    it('submits the clicked chip text verbatim as the prompt, for any chip including the Hebrew one', async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue({ ok: true, status: 200, json: async () => ({ answer: 'answer', trace: [], turns: 1 }) });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const el = mount();
+      const hebrewChip = chips(el)[1];
+      const expectedPrompt = hebrewChip.textContent;
+      hebrewChip.click();
+
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+      const requestBody = JSON.parse(options.body as string);
+      expect(requestBody.prompt).toBe(expectedPrompt);
+    });
+
+    it('does not allow a second click (another chip, or a duplicate event) to trigger a second request', async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue({ ok: true, status: 200, json: async () => ({ answer: 'answer', trace: [], turns: 1 }) });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const el = mount();
+      const [firstChip, secondChip] = chips(el);
+      firstChip.click();
+      secondChip.click(); // suggestions are already hidden — must be a no-op
+      firstChip.click(); // clicking the same (now-hidden) chip again — also a no-op
+
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      // Give any delayed second call a tick to show up before asserting it didn't.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps suggestions hidden after a successful suggestion-triggered request', async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue({ ok: true, status: 200, json: async () => ({ answer: 'answer', trace: [], turns: 1 }) });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const el = mount();
+      const block = suggestionsBlock(el);
+      chips(el)[0].click();
+      expect(block.hidden).toBe(true); // hidden immediately, ahead of the response
+
+      await vi.waitFor(() => expect(transcriptMessages(el)).toHaveLength(2));
+      expect(block.hidden).toBe(true); // still hidden — same as today's success behavior
+    });
+
+    it('restores suggestions if a suggestion-triggered request fails before a conversation is established', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+
+      const el = mount();
+      const block = suggestionsBlock(el);
+      const { status } = shadow(el);
+
+      chips(el)[0].click();
+      expect(block.hidden).toBe(true); // hidden immediately on click
+
+      await vi.waitFor(() => expect(status.dataset['state']).toBe('error'));
+      expect(block.hidden).toBe(false); // restored — no exchange ever succeeded
+    });
+
+    it('hides suggestions (chips AND the label) after a manually-typed first exchange succeeds', async () => {
       vi.stubGlobal(
         'fetch',
         vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ answer: 'answer', trace: [], turns: 1 }) })
@@ -274,7 +350,7 @@ describe('BusinessAgentWidget', () => {
       expect((el.shadowRoot as ShadowRoot).querySelector('.suggestions-label')).not.toBeNull();
     });
 
-    it('a failed request does not hide suggestions (history stays empty)', async () => {
+    it('a failed manually-typed request does not hide suggestions (history stays empty, and they were never hidden to begin with)', async () => {
       vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
 
       const el = mount();
