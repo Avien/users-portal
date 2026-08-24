@@ -4,6 +4,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stdin } from 'node:process';
+import { formatReviewOutput } from './pr-review-format.mjs';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A single-call Claude reviewer that checks a pull-request diff for ARCHITECTURE
@@ -23,8 +24,7 @@ import { stdin } from 'node:process';
 // ─────────────────────────────────────────────────────────────────────────────
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const MODEL = 'claude-opus-4-8';
-const MAX_DIFF_CHARS = 300_000; // keep the request well inside the context window
+const MAX_DIFF_CHARS = 500_000; // review-policy/safety bound, not a model context limit
 const MARKER = '<!-- architecture-review-bot -->';
 
 const args = process.argv.slice(2);
@@ -48,6 +48,9 @@ const loadEnv = () => {
   }
 };
 loadEnv();
+
+// Read after loadEnv() so a .env-file entry (not just a real env var) can override it.
+const MODEL = process.env['PR_REVIEW_MODEL'] || 'claude-opus-4-8';
 
 if (!process.env['ANTHROPIC_API_KEY']) {
   console.error('Set ANTHROPIC_API_KEY in your environment or a .env file at the repo root.');
@@ -153,8 +156,10 @@ const review = message.content
   .join('\n')
   .trim();
 
-process.stdout.write(`${MARKER}\n${review || '_No review produced._'}\n`);
-
 // Required-check semantics: exit non-zero when the rubric's own verdict line
 // signals drift, so CI fails the job and branch protection can block the merge.
-process.exit(/⚠️/.test(review) ? 1 : 0);
+// Also non-zero — unconditionally — when the diff was truncated: the model only
+// saw part of the PR, so its verdict (even a clean one) can't gate the merge.
+const { output, exitCode } = formatReviewOutput({ review, truncated, maxDiffChars: MAX_DIFF_CHARS, marker: MARKER });
+process.stdout.write(output);
+process.exit(exitCode);

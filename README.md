@@ -25,15 +25,20 @@ This repository explores how the same frontend domain can evolve across:
   <img src="https://img.shields.io/badge/-React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB" />
 </a>
 
+<a href="https://users-portal-vue.vercel.app">
+  <img src="https://img.shields.io/badge/-Vue-4FC08D?style=for-the-badge&logo=vue.js&logoColor=white" />
+</a>
+
 ## 📦 Project Overview
 
-This Nx monorepo contains Angular, React, and Hybrid Microfrontend implementations of the same domain — a users-and-orders dashboard with real-time WebSocket updates, deployed as independent Vercel projects that compose at runtime via Module Federation 2.0.
+This Nx monorepo contains Angular, React, Vue, and Hybrid Microfrontend implementations of the same domain — a users-and-orders dashboard with real-time WebSocket updates, deployed as independent Vercel projects that compose at runtime via Module Federation 2.0.
 
 | App | Stack | Purpose |
 | :--- | :--- | :--- |
 | `apps/portal-shell` | Vanilla JS, no build step | Landing page — mode selector, redirects to any app |
 | `apps/users-portal-angular` | Angular 21, NgRx, Signals, OnPush | Reference implementation + Hybrid MFE host |
 | `apps/users-portal-react` | React 19, TanStack Query, Zustand, Vite | Idiomatic React rebuild + MFE remote |
+| `apps/users-portal-vue` | Vue 3, TanStack Query, Pinia, Vite | Third parallel framework rebuild, standalone deploy |
 
 The UI lists users and their orders. Selecting a user loads orders lazily with per-user caching; a WebSocket stream pushes live updates merged into the cache without overwriting lazily loaded data; high-value and burst orders trigger auto-dismissing toast notifications.
 
@@ -42,13 +47,44 @@ The UI lists users and their orders. Selecting a user loads orders lazily with p
 - **Warning** — a newly streamed order crosses the high-value threshold (`>= $500`)
 - **Critical** — the same user receives multiple new streamed orders within a 2-minute burst window
 - **Noise control** — bulk API hydration is ignored to avoid toast spam; only streamed events trigger toasts
-- Pure detection logic (`reduceOrderMonitoring`) lives in the shared `@portal/users/utils` lib — both facades run the same rule, wire it to their own state layer (NgRx effect vs Zustand action)
+- Pure detection logic (`reduceOrderMonitoring`) lives in the shared `@portal/users/utils` lib — all three facades run the same rule, wiring it to their own state layer (NgRx effect / Zustand action / Pinia action)
 
 **Try it locally:**
 ```bash
-npm run mock:ws && npm start
+npm run mock:ws && npm run start:react
 ```
-On connect, the mock server immediately emits two orders for the same user (~0.5s/~1.5s in) to trigger the critical burst toast without waiting for the random stream. In production the same server runs persistently on Railway; Angular and React each read its URL from their own environment config.
+On connect, the mock server immediately emits three orders for the same user (~0.5s/~1.5s/~2.5s in) — the first is swallowed by the monitoring rule's own learning tick, the second (>= $500) triggers the warning toast, the third triggers the critical burst toast — without waiting for the random stream. This burst is scheduled once per server process (the first WS connection to arrive triggers it, not every connection), same as the ongoing random order generation — connecting a second tab/framework does not cause more orders to be generated. In production the same server runs persistently on Railway; Angular and React each read its URL from their own environment config — Vue's own client does the same (see [docs/roadmap.md](docs/roadmap.md) for Vue's overall status, which is still an in-progress initiative, not an officially completed production implementation).
+
+## 🗄️ Canonical Orders Store
+
+Every reader of Orders data — each frontend's initial load, the WebSocket stream, and the [Business Agent](docs/roadmap.md#product-facing-business-ai-agent) — reads from the **same** live server-side state, not a static snapshot frozen at process start:
+
+```text
+                       Canonical Orders Store
+                               │
+             ┌─────────────────┼──────────────────┐
+             │                 │                   │
+       GET /api/orders    WS /orders     GET /api/orders-snapshot
+             │                 │                   │
+             ↓                 ↓                   ↓
+        frontend          cache updates       Business Agent
+       initial load                        (orders + arrival metadata)
+```
+
+`tools/mock-orders-ws-server.mjs` owns the one canonical, in-memory order store — module-scope, shared across every connection, and the single origin for every order in the system, including ones generated after startup (the same file runs on Railway in production). Each frontend's initial load reads `GET /api/orders` (the current `Order[]`); `WS /orders` then pushes incremental updates to connected frontends. The Business Agent reads a separate `GET /api/orders-snapshot` endpoint — the same canonical store, bundled with the arrival-timestamp metadata its monitoring tools need. Without this, a browser refresh after new orders arrived would show stale mock-only data while the agent saw a different picture (or vice versa) — reading from one shared source is what keeps them in sync.
+
+The store retains the latest 30 orders per user (`tools/orders-store.mjs`) — a small, demo-appropriate bound so a long-lived Railway process doesn't grow every reader's payload (and the Business Agent's token usage) unboundedly. Retention is centralized at the store itself, so `GET /api/orders`, `GET /api/orders-snapshot`, and every WS consumer always see the exact same retained set — newest orders always win, oldest are pruned (along with their arrival metadata) once a user crosses the cap.
+
+## 🤖 LLM-Powered Business Agent
+
+A Claude-powered agent that answers natural-language questions over live Users/Orders data via structured tool calling — not a chatbot wrapper, an actual `model → tool → result → model` loop reading the same canonical backend state the UI does.
+
+- Bounded multi-turn conversational context — follow-up questions resolve pronouns/references from the visible transcript
+- One framework-independent `<business-agent-widget>` Web Component (Shadow DOM), shared verbatim by Angular, React, and Vue — Hybrid/MFE compatible
+- The UI and Business Agent derive from the same canonical backend state, minimizing source-of-truth drift: frontends use HTTP snapshot + WS deltas, while the agent takes a fresh canonical snapshot for each request
+- Server-side-only Vercel API — `ANTHROPIC_API_KEY` never reaches the browser, rate-limited and sanitized at the production boundary
+
+→ Full architecture, agent loop, and deployment details: **[docs/business-agent.md](docs/business-agent.md)**
 
 ## ⚖️ Architecture at a Glance
 
@@ -191,8 +227,8 @@ npm install
 # Angular — http://localhost:4200
 npm run validate:angular && npm run mock:ws && npm run start:angular
 
-# React — http://localhost:4201
-npm run validate:react && npm run mock:ws && npm run start:react
+# React — http://localhost:4201 (also starts the WS mock + local Business Agent server)
+npm run validate:react && npm run start:react
 
 # Shell — http://localhost:4000 (no build step)
 npm run start:shell
@@ -208,8 +244,10 @@ npm run validate   # lint + test everything, all frameworks
 
 | Command | Scope | Description |
 | :--- | :--- | :--- |
-| `npm run start:angular` / `start:react` / `start:shell` | — | Serve each app (`:4200` / `:4201` / `:4000`) |
-| `npm run mock:ws` | Both | WS mock server at `ws://localhost:3000/orders` |
+| `npm run start:angular` / `start:shell` | — | Serve each app (`:4200` / `:4000`) |
+| `npm run start:react` | React | Serves the app (`:4201`) **and** the WS mock + local Business Agent server together, via `concurrently` |
+| `npm run mock:ws` | Both | WS mock server at `ws://localhost:3000/orders` — only needed standalone for Angular |
+| `npm run business-agent` | React | Local Business Agent server at `http://localhost:8787` — only needed standalone outside `start:react` |
 | `npm run validate` | All | Lint + test everything |
 | `npm run validate:angular` / `validate:react` | Angular / React | Lint + test that framework + shared lib |
 | `npm run build:angular` / `build:react` | Angular / React | Validate + production build |
@@ -227,17 +265,19 @@ npm run validate   # lint + test everything, all frameworks
 ## 📌 Summary
 
 This project demonstrates:
-* Scalable **Nx monorepo** with two parallel framework implementations + a framework-agnostic shell
-* **Shared domain contracts** (`@portal/users/utils`) consumed by both Angular and React
+* Scalable **Nx monorepo** with three parallel framework implementations + a framework-agnostic shell
+* **Shared domain contracts** (`@portal/users/utils`) consumed by Angular, React, and Vue
 * **Module boundary enforcement** via Nx ESLint `type:` + `framework:` tags
-* **Facade pattern** in both frameworks — same public surface, idiomatic internals
+* **Facade pattern** across frameworks — same public surface, idiomatic internals
 * **WebSocket stream** with pending-buffer pattern and real-time order monitoring (shared pure logic)
 * **Hybrid MFE** — Module Federation 2.0, framework-agnostic `mount()` API, injected Platform SDK + cross-MFE `EventBus`
+* **LLM-Powered Business Agent** — Claude API + structured tool calling over live business data, one shared Web Component across all three frameworks
 * **Agentic AI workflow** — slash commands, an Nx generator, an autonomous Claude API agent, and a PR review bot, all sharing one `CLAUDE.md` as the architectural source of truth
 
 ## 📖 Deep Dives
 
 - **[docs/mfe-architecture.md](docs/mfe-architecture.md)** — full `mount()` API, Platform SDK internals, module-federation gotchas
 - **[docs/state-flow.md](docs/state-flow.md)** — per-framework facade code, both state-flow diagrams (Angular/React)
+- **[docs/business-agent.md](docs/business-agent.md)** — LLM-Powered Business Agent architecture, agent loop, canonical source-of-truth model, deployment & security
 - **[docs/agentic-workflow.md](docs/agentic-workflow.md)** — slash command examples, the autonomous agent's tool loop, generator internals, PR review agent design
-- **[docs/roadmap.md](docs/roadmap.md)** — planned work: business AI agent, authentication & platform, multi-framework MFE evolution, runtime resilience
+- **[docs/roadmap.md](docs/roadmap.md)** — planned work: authentication & platform, multi-framework MFE evolution, runtime resilience

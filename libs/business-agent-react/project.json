@@ -1,0 +1,7 @@
+{
+  "name": "business-agent-react",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/business-agent-react/src",
+  "projectType": "library",
+  "tags": ["scope:business-agent-react", "type:feature", "framework:react"]
+}

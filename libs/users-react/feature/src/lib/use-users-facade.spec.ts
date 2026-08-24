@@ -118,4 +118,72 @@ describe('useUsersFacade', () => {
     rerender();
     expect(result.current.selectUser).toBe(first);
   });
+
+  describe('WS-before-HTTP hydration race with a canonical eviction', () => {
+    class MockWebSocket {
+      static instances: MockWebSocket[] = [];
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      close = vi.fn();
+      constructor(public readonly url: string) {
+        MockWebSocket.instances.push(this);
+      }
+      emit(data: unknown) {
+        this.onmessage?.(new MessageEvent('message', { data: JSON.stringify(data) }));
+      }
+      static latest() {
+        return MockWebSocket.instances[MockWebSocket.instances.length - 1];
+      }
+      static reset() {
+        MockWebSocket.instances = [];
+      }
+    }
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it(
+      'a WS eviction that arrives before the initial HTTP fetch resolves is reconciled once it does — ' +
+        'the stale (already in-flight) HTTP snapshot still containing the evicted order must not reintroduce it',
+      async () => {
+        vi.stubGlobal('WebSocket', MockWebSocket);
+        MockWebSocket.reset();
+
+        // The HTTP fetch for user 1 is already in flight — controlled manually
+        // so it can resolve AFTER the WS eviction below, simulating the race.
+        let resolveOrders!: (orders: unknown[]) => void;
+        vi.mocked(dataAccess.fetchOrdersByUser).mockImplementation(
+          () => new Promise((resolve) => (resolveOrders = resolve))
+        );
+
+        const { result } = renderHook(
+          () => {
+            dataAccess.useOrdersStream();
+            return useUsersFacade();
+          },
+          { wrapper: makeWrapper('/users/1') }
+        );
+        await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+
+        // WS delivers order #31 and reports #1 as canonically evicted — no
+        // cache entry exists yet for ['orders', 1] (the fetch above hasn't
+        // resolved), so this buffers #31 and records a pending-removal tombstone.
+        const ORDER_31 = { id: 31, userId: 1, total: 42 };
+        MockWebSocket.latest().emit({ type: 'order-update', payload: ORDER_31, removedOrderIds: [1] });
+
+        // The HTTP fetch — sent before the eviction happened server-side —
+        // now resolves with a snapshot that still includes the evicted order #1.
+        const ORDER_1 = { id: 1, userId: 1, total: 100 };
+        const ORDER_2 = { id: 2, userId: 1, total: 5 };
+        resolveOrders([ORDER_1, ORDER_2]);
+
+        await waitFor(() => expect(result.current.orders.some((o) => o.id === 31)).toBe(true));
+
+        const ids = result.current.orders.map((o) => o.id).sort((a, b) => a - b);
+        expect(ids).toEqual([2, 31]); // #1 absent, #31 present
+        expect(result.current.orders.filter((o) => o.id === 31)).toHaveLength(1); // no duplicates
+        expect(result.current.orders).toHaveLength(2); // matches canonical retained count
+      }
+    );
+  });
 });

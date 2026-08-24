@@ -91,4 +91,193 @@ describe('useUsersFacade', () => {
     expect(facade.notifications.value).toEqual([]);
     expect(facade.error.value).toBeNull();
   });
+
+  describe('WS-order-before-HTTP-load race (pending-order drain merge)', () => {
+    class MockWebSocket {
+      static instances: MockWebSocket[] = [];
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      close = vi.fn();
+      constructor(public readonly url: string) {
+        MockWebSocket.instances.push(this);
+      }
+      emit(data: unknown) {
+        this.onmessage?.(new MessageEvent('message', { data: JSON.stringify(data) }));
+      }
+      static latest() {
+        return MockWebSocket.instances[MockWebSocket.instances.length - 1];
+      }
+      static reset() {
+        MockWebSocket.instances = [];
+      }
+    }
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('drains pending WS orders by id: collisions keep exactly one copy (WS wins), pending-only orders are retained', async () => {
+      vi.stubGlobal('WebSocket', MockWebSocket);
+      MockWebSocket.reset();
+
+      let resolveOrders!: (orders: unknown[]) => void;
+      vi.mocked(dataAccess.fetchOrdersByUser).mockImplementation(
+        () => new Promise((resolve) => { resolveOrders = resolve; }),
+      );
+
+      const router: Router = createRouter({
+        history: createMemoryHistory(),
+        routes: [{ path: '/users/:userId', component: { render: () => null } }],
+      });
+      router.push('/users/1');
+      await router.isReady();
+
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+      let facade!: ReturnType<typeof useUsersFacade>;
+      const Comp = defineComponent({
+        setup() {
+          dataAccess.useOrdersStream();
+          facade = useUsersFacade();
+          return () => h('div');
+        },
+      });
+      mount(Comp, {
+        global: { plugins: [router, createPinia(), [VueQueryPlugin, { queryClient }]] },
+      });
+      await flushPromises();
+
+      // Both arrive over WS while the HTTP fetch is still in flight (no cache
+      // entry for ['orders', 1] yet) — both get buffered.
+      const ORDER_103_FRESH = { id: 103, userId: 1, total: 999, status: 'completed' };
+      const ORDER_104_PENDING_ONLY = { id: 104, userId: 1, total: 15, status: 'pending' };
+      MockWebSocket.latest().emit({ type: 'order-update', payload: ORDER_103_FRESH });
+      MockWebSocket.latest().emit({ type: 'order-update', payload: ORDER_104_PENDING_ONLY });
+
+      // HTTP snapshot resolves — reading the same canonical store, it already
+      // contains id 103 too, but with a stale total (captured before the WS
+      // broadcast's update); it does not contain 104 at all.
+      const ORDER_101 = { id: 101, userId: 1, total: 120.5, status: 'completed' };
+      const ORDER_103_STALE = { id: 103, userId: 1, total: 42, status: 'pending' };
+      resolveOrders([ORDER_101, ORDER_103_STALE]);
+      await flushPromises();
+      await flushPromises();
+
+      const orders = facade.orders.value;
+      const ids = orders.map((o) => o.id);
+
+      // Exactly one copy of the colliding id.
+      expect(ids.filter((id) => id === 103)).toHaveLength(1);
+      // WS payload wins on collision.
+      expect(orders.find((o) => o.id === 103)?.total).toBe(999);
+      // Pending-only order is retained.
+      expect(orders.find((o) => o.id === 104)).toEqual(ORDER_104_PENDING_ONLY);
+      // HTTP-only order untouched.
+      expect(orders.find((o) => o.id === 101)).toEqual(ORDER_101);
+      // Existing HTTP-snapshot ordering preserved (101 before 103); pending-only appended after.
+      expect(ids).toEqual([101, 103, 104]);
+    });
+
+    it('two buffered WS updates for the same pending-only id drain to exactly one order, latest payload winning', async () => {
+      vi.stubGlobal('WebSocket', MockWebSocket);
+      MockWebSocket.reset();
+
+      let resolveOrders!: (orders: unknown[]) => void;
+      vi.mocked(dataAccess.fetchOrdersByUser).mockImplementation(
+        () => new Promise((resolve) => { resolveOrders = resolve; }),
+      );
+
+      const router: Router = createRouter({
+        history: createMemoryHistory(),
+        routes: [{ path: '/users/:userId', component: { render: () => null } }],
+      });
+      router.push('/users/1');
+      await router.isReady();
+
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+      let facade!: ReturnType<typeof useUsersFacade>;
+      const Comp = defineComponent({
+        setup() {
+          dataAccess.useOrdersStream();
+          facade = useUsersFacade();
+          return () => h('div');
+        },
+      });
+      mount(Comp, {
+        global: { plugins: [router, createPinia(), [VueQueryPlugin, { queryClient }]] },
+      });
+      await flushPromises();
+
+      // The same pending-only order id arrives twice over WS (e.g. a status
+      // update) before the HTTP fetch resolves — both buffer, since the cache
+      // for ['orders', 1] doesn't exist yet.
+      const ORDER_105_V1 = { id: 105, userId: 1, total: 30, status: 'pending' };
+      const ORDER_105_V2 = { id: 105, userId: 1, total: 30, status: 'completed' };
+      MockWebSocket.latest().emit({ type: 'order-update', payload: ORDER_105_V1 });
+      MockWebSocket.latest().emit({ type: 'order-update', payload: ORDER_105_V2 });
+
+      const ORDER_101 = { id: 101, userId: 1, total: 120.5, status: 'completed' };
+      resolveOrders([ORDER_101]);
+      await flushPromises();
+      await flushPromises();
+
+      const orders = facade.orders.value;
+      const matches = orders.filter((o) => o.id === 105);
+      expect(matches).toHaveLength(1);
+      expect(matches[0]).toEqual(ORDER_105_V2);
+    });
+
+    it(
+      'a WS eviction that arrives before the initial HTTP fetch resolves is reconciled once it does — ' +
+        'the stale (already in-flight) HTTP snapshot still containing the evicted order must not reintroduce it',
+      async () => {
+        vi.stubGlobal('WebSocket', MockWebSocket);
+        MockWebSocket.reset();
+
+        let resolveOrders!: (orders: unknown[]) => void;
+        vi.mocked(dataAccess.fetchOrdersByUser).mockImplementation(
+          () => new Promise((resolve) => { resolveOrders = resolve; }),
+        );
+
+        const router: Router = createRouter({
+          history: createMemoryHistory(),
+          routes: [{ path: '/users/:userId', component: { render: () => null } }],
+        });
+        router.push('/users/1');
+        await router.isReady();
+
+        const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+        let facade!: ReturnType<typeof useUsersFacade>;
+        const Comp = defineComponent({
+          setup() {
+            dataAccess.useOrdersStream();
+            facade = useUsersFacade();
+            return () => h('div');
+          },
+        });
+        mount(Comp, {
+          global: { plugins: [router, createPinia(), [VueQueryPlugin, { queryClient }]] },
+        });
+        await flushPromises();
+
+        // WS delivers order #31 and reports #1 as canonically evicted — no
+        // cache entry exists yet for ['orders', 1] (the fetch is still in
+        // flight), so this buffers #31 and records a pending-removal tombstone.
+        const ORDER_31 = { id: 31, userId: 1, total: 42, status: 'pending' };
+        MockWebSocket.latest().emit({ type: 'order-update', payload: ORDER_31, removedOrderIds: [1] });
+
+        // The HTTP fetch — sent before the eviction happened server-side —
+        // now resolves with a snapshot that still includes the evicted order #1.
+        const ORDER_1 = { id: 1, userId: 1, total: 100, status: 'completed' };
+        const ORDER_2 = { id: 2, userId: 1, total: 5, status: 'pending' };
+        resolveOrders([ORDER_1, ORDER_2]);
+        await flushPromises();
+        await flushPromises();
+
+        const orders = facade.orders.value;
+        const ids = orders.map((o) => o.id).sort((a, b) => a - b);
+        expect(ids).toEqual([2, 31]); // #1 absent, #31 present
+        expect(orders.filter((o) => o.id === 31)).toHaveLength(1); // no duplicates
+        expect(orders).toHaveLength(2); // matches canonical retained count
+      },
+    );
+  });
 });

@@ -4,7 +4,9 @@
 // This module installs the minimum stubs so components render correctly.
 // HMR won't work for the remote in this mode — that's expected.
 if (typeof window !== 'undefined') {
-  (window as any).__vite_plugin_react_preamble_installed__ = true;
-  (window as any).$RefreshReg$ ??= () => {};
-  (window as any).$RefreshSig$ ??= () => (type: unknown) => type;
+  (window as unknown as Record<string, unknown>)['__vite_plugin_react_preamble_installed__'] = true;
+  (window as unknown as Record<string, unknown>)['$RefreshReg$'] ??= () => {
+    // no-op stub — Fast Refresh registration isn't meaningful outside Vite's own dev server
+  };
+  (window as unknown as Record<string, unknown>)['$RefreshSig$'] ??= () => (type: unknown) => type;
 }

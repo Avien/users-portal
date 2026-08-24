@@ -30,6 +30,10 @@ export const UsersActions = createActionGroup({
     // UI
     'Select User': props<{ userId: number }>(),
 
-    ordersUpdatedFromStream: props<{ order: Order }>()
+    // removedOrderIds: any orders this same canonical-store insert evicted
+    // for order.userId under retention (see tools/orders-store.mjs) — empty
+    // when no eviction occurred, never omitted (unlike the WS wire event,
+    // which omits it — the service normalizes that before this action fires).
+    ordersUpdatedFromStream: props<{ order: Order; removedOrderIds: number[] }>()
   }
 });

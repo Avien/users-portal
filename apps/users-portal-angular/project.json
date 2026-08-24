@@ -48,6 +48,27 @@
           "optimization": false,
           "extractLicenses": false,
           "sourceMap": true
+        },
+        "preview": {
+          "fileReplacements": [
+            {
+              "replace": "apps/users-portal-angular/src/environments/environment.ts",
+              "with": "apps/users-portal-angular/src/environments/environment.preview.ts"
+            }
+          ],
+          "budgets": [
+            {
+              "type": "initial",
+              "maximumWarning": "500kb",
+              "maximumError": "1mb"
+            },
+            {
+              "type": "anyComponentStyle",
+              "maximumWarning": "4kb",
+              "maximumError": "8kb"
+            }
+          ],
+          "outputHashing": "all"
         }
       },
       "defaultConfiguration": "production"

@@ -4,7 +4,7 @@
   "sourceRoot": "libs/business-agent-widget/src",
   "prefix": "lib",
   "projectType": "library",
-  "tags": ["type:utils", "scope:business-agent-widget", "framework:shared"],
+  "tags": ["type:ui", "scope:business-agent-widget", "framework:shared"],
   "targets": {
     "lint": {
       "executor": "@nx/eslint:lint"
