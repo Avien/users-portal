@@ -75,6 +75,15 @@ also about to
 announce (deduped by id, not double-inserted). All three frameworks
 upsert-by-id rather than blindly appending.
 
+**Order ids are opaque identifiers, not an encoding of user identity.**
+`order.userId` is the only authoritative source of order ownership,
+everywhere an order is attributed to a user — the UI, the monitoring
+toasts, and the Business Agent all read it directly from the order, never
+re-derive it from the order's `id`. (An earlier version of this codebase
+briefly did the latter as an internal convention; it was a real bug once
+long-running ids grew past the numeric range that convention assumed, since
+fixed — ownership by id was never a documented or supported contract.)
+
 ## Cross-framework integration
 
 - One shared, framework-free `<business-agent-widget>` (Shadow DOM,
@@ -97,7 +106,8 @@ upsert-by-id rather than blindly appending.
   provider/server errors (Anthropic failures logged server-side, safe
   messages only returned to the browser), bounded SDK retries
 - Vercel Firewall rate limiting (8 requests/60s per IP), verified live
-  against the deployed Preview
+  against the deployed Preview ahead of the production rollout, and again
+  in production
 - The public response includes a `trace` of which tools were called and with
   what input (e.g. `{ name: 'getUserOrders', input: { userId: 3 } }`) —
   intentional demo/developer observability that shows genuine tool calling
@@ -114,6 +124,26 @@ upsert-by-id rather than blindly appending.
 - The Hybrid MFE's Angular Preview build resolves its React remote URL the
   same way, so the Preview composition loads the matching React Preview
   build rather than production
+
+## Cost & rate-limit safeguards
+
+Every request to `/api/business-agent` is bounded on multiple independent
+axes, deliberately — not left to whatever the Anthropic SDK/API would allow
+by default (`tools/business-agent-core.ts`, `tools/business-agent-http.ts`):
+
+| Safeguard | Bound | Why |
+| :--- | :--- | :--- |
+| Per-IP request rate | 8 requests / 60s (Vercel Firewall) | Caps worst-case call volume before a request ever reaches Claude |
+| Tool-use loop turns | `MAX_TURNS = 8` | One user question can drive multiple Claude calls; this bounds the whole loop, not just one call |
+| Output tokens per call | `MAX_OUTPUT_TOKENS = 2048` | Right-sized to this agent's real answers (longest observed: 697 tokens), not the SDK default |
+| Whole-request wall-clock | `AGENT_TIMEOUT_MS = 45s` | One shared deadline across every turn of the loop, not per-call — bounds total latency/cost exposure regardless of how many turns a request takes |
+| SDK-level retries | `SDK_MAX_RETRIES = 1` | Absorbs one transient failure per turn without letting silent retries become an uncounted, unbounded cost/latency source |
+| Request body size | 32KB (`MAX_BODY_BYTES`) | Rejected before any JSON parsing or Claude call is attempted |
+| Prompt / history message length | 2,000 characters each, history capped to the last 6 messages | Bounds the input-token cost of every request, including the resent conversation history |
+
+Aggregated per-query token/cost telemetry (`estimateCostUsd`, opt-in via
+`BUSINESS_AGENT_USAGE_LOG=1`) is logged server-side only, never returned to
+the browser — see `formatUsageLog` in `tools/business-agent-core.ts`.
 
 ## Preview MFE note
 
@@ -143,16 +173,48 @@ restating the subject.
 Demonstrates `getOrderMonitoringSignals` — the same high-value/burst rules
 that drive the UI's own warning/critical toasts, surfaced conversationally.
 
+## What the agent can see
+
+The Business Agent answers strictly from the **current retained dataset** —
+the same per-user FIFO window of at most 30 orders the UI itself is bounded
+to (see below), never a full lifetime order history. Concretely:
+
+- An order evicted by retention is **gone**, not archived — there is no
+  separate history store the agent (or anything else) can fall back to. If
+  a user has placed more than 30 orders since the process last started, the
+  agent's tools (`getUserOrders`, `getOrderMonitoringSignals`) only see the
+  most recent 30, identically to what `GET /api/orders` returns to the UI.
+- A question like "what was this user's *first* order ever?" cannot be
+  answered **reliably** once that user has exceeded the retention cap: the
+  tools expose only the current retained dataset, and there is no
+  archive/history store for the agent (or anything else) to consult instead.
+  That's an architectural guarantee. What the agent actually *says* in that
+  case is a separate, model-behavior question this architecture doesn't
+  currently constrain — the system prompt/tool contract doesn't tell Claude
+  that older evicted orders once existed, so it isn't guaranteed to
+  volunteer that limitation unprompted rather than answering from only what
+  the tools returned. Making that explicit at the prompt/tool-contract level
+  is tracked as an open item under Post-production / Portfolio Polish (see
+  [docs/roadmap.md](./roadmap.md#business-agent-semantics-clarity)).
+- This is a direct consequence of the demo-scale retention trade-off below,
+  not a separate limitation of the agent itself — every reader of the
+  canonical store (UI, WS stream, agent) is bounded the same way.
+
 ## Demo-scale simplifications
 
 Honest about what's intentionally simplified for a portfolio-scale demo,
 not production infrastructure:
 
 - The canonical Orders store is in-memory, process-local to the Railway
-  service — not a persistent database. Restarting that process resets it.
-  It retains the latest 30 orders per user (count-based, not TTL) so a
-  long-lived process doesn't grow every reader's payload — including the
-  Business Agent's own tool-result token usage — unboundedly.
+  service — not a persistent database. Restarting that process resets all
+  demo state for every visitor (there is no per-visitor data — see below).
+  It retains the latest 30 orders per user via simple per-user FIFO
+  eviction (count-based, not TTL: the oldest order is dropped once a 31st
+  arrives) so a long-lived process doesn't grow every reader's payload —
+  including the Business Agent's own tool-result token usage — unboundedly.
+- This is a **shared** live demo, not a private per-visitor sandbox — every
+  visitor's browser reads (and, via the synthetic order generator, is
+  affected by) the exact same canonical backend state at the same time.
 - Demo orders are synthetically generated by the server process itself (one
   generator per process, independent of how many clients are connected) to
   keep the store populated for the live deploys.

@@ -53,11 +53,11 @@ The UI lists users and their orders. Selecting a user loads orders lazily with p
 ```bash
 npm run mock:ws && npm run start:react
 ```
-On connect, the mock server immediately emits three orders for the same user (~0.5s/~1.5s/~2.5s in) — the first is swallowed by the monitoring rule's own learning tick, the second (>= $500) triggers the warning toast, the third triggers the critical burst toast — without waiting for the random stream. This burst is scheduled once per server process (the first WS connection to arrive triggers it, not every connection), same as the ongoing random order generation — connecting a second tab/framework does not cause more orders to be generated. In production the same server runs persistently on Railway; Angular and React each read its URL from their own environment config — Vue's own client does the same (see [docs/roadmap.md](docs/roadmap.md) for Vue's overall status, which is still an in-progress initiative, not an officially completed production implementation).
+On the first WebSocket connection after a server-process start, the mock server emits three demo orders for the same user (~0.5s/~1.5s/~2.5s in) — the first is swallowed by the monitoring rule's own learning tick, the second (>= $500) triggers the warning toast, the third triggers the critical burst toast — without waiting for the random stream. That startup burst is scheduled once per server process, not once per connection: a later visitor connecting to an already-running process (including on Railway in production) does not trigger another burst — they simply join the ongoing process-level random order stream already in progress, with nothing in the UI to distinguish "just joined a live process" from "was already watching it" (see the *Live WebSocket order visual feedback* item in [docs/roadmap.md](docs/roadmap.md)'s Post-production / Portfolio Polish section). Connecting a second tab/framework does not cause more orders to be generated — generation is a property of the process, not the connection count. In production the same server runs persistently on Railway; Angular, React, and Vue each read its URL from their own environment config — all three are production-deployed, production-configured, and read the same live canonical backend.
 
 ## 🗄️ Canonical Orders Store
 
-Every reader of Orders data — each frontend's initial load, the WebSocket stream, and the [Business Agent](docs/roadmap.md#product-facing-business-ai-agent) — reads from the **same** live server-side state, not a static snapshot frozen at process start:
+Every reader of Orders data — each frontend's initial load, the WebSocket stream, and the [Business Agent](docs/business-agent.md) — reads from the **same** live server-side state, not a static snapshot frozen at process start:
 
 ```text
                        Canonical Orders Store
@@ -80,7 +80,7 @@ The store retains the latest 30 orders per user (`tools/orders-store.mjs`) — a
 A Claude-powered agent that answers natural-language questions over live Users/Orders data via structured tool calling — not a chatbot wrapper, an actual `model → tool → result → model` loop reading the same canonical backend state the UI does.
 
 - Bounded multi-turn conversational context — follow-up questions resolve pronouns/references from the visible transcript
-- One framework-independent `<business-agent-widget>` Web Component (Shadow DOM), shared verbatim by Angular, React, and Vue — Hybrid/MFE compatible
+- One framework-independent `<business-agent-widget>` Web Component (Shadow DOM), shared verbatim by all three standalone apps (Angular, React, Vue) and by the Hybrid MFE composition (Angular host + React remote)
 - The UI and Business Agent derive from the same canonical backend state, minimizing source-of-truth drift: frontends use HTTP snapshot + WS deltas, while the agent takes a fresh canonical snapshot for each request
 - Server-side-only Vercel API — `ANTHROPIC_API_KEY` never reaches the browser, rate-limited and sanitized at the production boundary
 

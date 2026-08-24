@@ -6,9 +6,10 @@ Nx monorepo containing three implementations of the same Users/Orders domain, pl
 Business Agent (Claude-powered) feature composed into all three:
 - `apps/users-portal-angular` — Angular 21, NgRx, Signals, OnPush (reference implementation, do not break)
 - `apps/users-portal-react` — React 19, Vite (learning rebuild, actively developed, established)
-- `apps/users-portal-vue` — Vue 3, Vite, Pinia, TanStack Query (in-progress/experimental: not yet
-  merged to `main`, not part of Hybrid MFE composition — treat it as a real, actively-typed and
-  -tested implementation, but do not describe it as released or complete)
+- `apps/users-portal-vue` — Vue 3, Vite, Pinia, TanStack Query (production: merged to `main`,
+  deployed standalone to Vercel, production-configured and smoke-tested against the canonical
+  Orders backend and Business Agent. Standalone only — not part of Hybrid MFE composition, which
+  remains Angular host + React remote)
 
 **Goal:** Rebuild the Angular app idiomatically in each other framework. Do not translate Angular
 patterns directly — find the framework's own equivalent. The Angular app is the architectural
@@ -32,7 +33,8 @@ apps/
                                isn't the point of the task, but it legitimately receives real
                                feature work, e.g. Business Agent host integration)
   users-portal-react/       ← React app + MFE remote (actively developed)
-  users-portal-vue/         ← Vue app (in-progress/experimental — see Project Overview)
+  users-portal-vue/         ← Vue app (production, standalone deploy only — not an MFE host or
+                               remote; see Project Overview)
 
 libs/
   users/  (@portal/users/utils)   ← framework-agnostic, shared by ALL THREE apps
@@ -49,7 +51,7 @@ libs/
     feature/     (@portal/users-react/feature)     ← useUsersFacade hook
     ui/          (@portal/users-react/ui)           ← React presentational components (incl. virtual scroll)
 
-  users-vue/                ← Vue-specific only (in-progress/experimental)
+  users-vue/                ← Vue-specific only
     data-access/ (@portal/users-vue/data-access) ← TanStack Query, Pinia store, API fns, useOrdersStream
     feature/     (@portal/users-vue/feature)     ← useUsersFacade composable
     ui/          (@portal/users-vue/ui)           ← Vue presentational components
@@ -186,7 +188,7 @@ direction) and a `framework:` tag (enforcing framework isolation), both read by 
 |---|---|
 | `framework:angular` | `users-portal-angular`, `users-data-access`, `users-feature`, `users-ui`, `business-agent-angular` |
 | `framework:react` | `users-portal-react`, `users-react-data-access`, `users-react-feature`, `users-react-ui`, `business-agent-react` |
-| `framework:vue` | `users-portal-vue`, `users-vue-data-access`, `users-vue-feature`, `users-vue-ui`, `business-agent-vue` (in-progress/experimental) |
+| `framework:vue` | `users-portal-vue`, `users-vue-data-access`, `users-vue-feature`, `users-vue-ui`, `business-agent-vue` |
 | `framework:shared` | `users-utils`, `platform`, `business-agent-widget` |
 
 `lint` targets are auto-inferred for every project via `@nx/eslint/plugin` (registered in
