@@ -16,6 +16,7 @@ import {
   MAX_OUTPUT_TOKENS,
   SDK_MAX_RETRIES,
   ORDERS_SNAPSHOT_FETCH_TIMEOUT_MS,
+  SYSTEM_PROMPT,
   type OrdersSnapshot,
   type ConversationMessage,
 } from './business-agent-core.ts';
@@ -79,6 +80,14 @@ describe('business tools', () => {
         userName: 'Avi Cohen',
         totalAmount: MOCK_ORDERS.filter((o) => o.userId === 1).reduce((sum, o) => sum + o.total, 0) + 42,
       });
+    });
+
+    it('describes itself as returning the currently retained window, never as "every order" (which would imply lifetime history)', () => {
+      const description = tools.getUserOrders.definition.description;
+      expect(description.toLowerCase()).not.toMatch(/every order/);
+      expect(description).toMatch(/retained/i);
+      expect(description).toMatch(/30/);
+      expect(description.toLowerCase()).toMatch(/evict/);
     });
   });
 
@@ -461,6 +470,36 @@ describe('parseAgentRequestBody', () => {
   });
 });
 
+// Retained-dataset semantics: the agent must understand (and be able to say
+// plainly) that it only ever sees the current retained window, never a
+// lifetime-complete order history — see docs/business-agent.md's "What the
+// agent can see". These tests cover the prompt/tool-contract text itself;
+// runAgent orchestration's own tests below cover that this exact text is
+// what actually reaches the Anthropic API.
+describe('SYSTEM_PROMPT — data-scope semantics', () => {
+  it('states the retention cap and that evicted orders are unavailable, not archived', () => {
+    expect(SYSTEM_PROMPT).toMatch(/30 orders per user/);
+    expect(SYSTEM_PROMPT.toLowerCase()).toMatch(/evict/);
+    // Deliberately not "permanently gone" — that's too absolute for an in-memory
+    // demo whose whole dataset resets on a Railway restart. The actual guarantee
+    // is narrower: evicted orders are unavailable from the current canonical
+    // store or any agent tool, not that they're gone in some deeper sense.
+    expect(SYSTEM_PROMPT.toLowerCase()).toMatch(/unavailable to the agent\/tools/);
+    expect(SYSTEM_PROMPT.toLowerCase()).toMatch(/no historical archive available/);
+  });
+
+  it('instructs the model to explain the limitation rather than answer lifetime-history questions as if the retained window were complete', () => {
+    expect(SYSTEM_PROMPT).toMatch(/first order ever/i);
+    expect(SYSTEM_PROMPT).toMatch(/lifetime spend/i);
+    expect(SYSTEM_PROMPT).toMatch(/do NOT answer as if the current retained orders were the complete history/);
+  });
+
+  it('states that one snapshot is captured per Ask/request and reused for the whole turn, not re-fetched mid-request', () => {
+    expect(SYSTEM_PROMPT).toMatch(/captured once right before this request began/);
+    expect(SYSTEM_PROMPT).toMatch(/does not update mid-request/);
+  });
+});
+
 describe('runAgent orchestration (Claude API mocked)', () => {
   it('drives tool_use -> tool execution -> tool_result -> final response', async () => {
     const calls: Anthropic.MessageCreateParams[] = [];
@@ -735,6 +774,95 @@ describe('runAgent orchestration (Claude API mocked)', () => {
     expect(calls[0][0].max_tokens).toBe(MAX_OUTPUT_TOKENS);
     expect(calls[0][0].max_tokens).toBeLessThan(4096); // explicitly smaller than the original unsized default
     expect(calls[0][1]?.maxRetries).toBe(SDK_MAX_RETRIES);
+  });
+
+  it('sends the exact exported SYSTEM_PROMPT as `system` on every call — the data-scope semantics text is genuinely wired up, not just documented', async () => {
+    const calls: Anthropic.MessageCreateParams[] = [];
+    const responses = [
+      {
+        stop_reason: 'tool_use',
+        content: [{ type: 'tool_use', id: 'toolu_1', name: 'getUserOrders', input: { userId: 1 } }],
+        usage: USAGE(10, 5),
+        model: 'claude-sonnet-5',
+      },
+      {
+        stop_reason: 'end_turn',
+        content: [{ type: 'text', text: 'done', citations: [] }],
+        usage: USAGE(10, 5),
+        model: 'claude-sonnet-5',
+      },
+    ];
+    const fakeClient = {
+      messages: {
+        stream: (params: Anthropic.MessageCreateParams) => {
+          calls.push(params);
+          const response = responses[calls.length - 1];
+          return { finalMessage: async () => response as Anthropic.Message };
+        },
+      },
+    };
+
+    await runAgent(fakeClient as unknown as Anthropic, 'q', BASE_SNAPSHOT);
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0].system).toBe(SYSTEM_PROMPT);
+    expect(calls[1].system).toBe(SYSTEM_PROMPT); // unchanged across turns within the same run
+  });
+
+  it('reuses the exact same snapshot object across every tool call in the run — one fresh snapshot per Ask, never re-fetched mid-run', async () => {
+    const snapshot: OrdersSnapshot = { orders: MOCK_ORDERS, arrivals: {} };
+    const seenSnapshots: OrdersSnapshot[] = [];
+    // Capture the real implementation BEFORE spyOn replaces tools.getUserOrders.run —
+    // grabbing it after would capture the spy itself and recurse forever.
+    const originalRun = tools.getUserOrders.run;
+    // Wrap (don't replace behavior) so results stay real — just observe the
+    // snapshot reference each dispatch actually received.
+    const runSpy = vi.spyOn(tools.getUserOrders, 'run').mockImplementation((input, snap) => {
+      seenSnapshots.push(snap);
+      return originalRun(input, snap);
+    });
+
+    const responses = [
+      {
+        stop_reason: 'tool_use',
+        content: [{ type: 'tool_use', id: 'toolu_1', name: 'getUserOrders', input: { userId: 1 } }],
+        usage: USAGE(10, 5),
+        model: 'claude-sonnet-5',
+      },
+      {
+        stop_reason: 'tool_use',
+        content: [{ type: 'tool_use', id: 'toolu_2', name: 'getUserOrders', input: { userId: 2 } }],
+        usage: USAGE(10, 5),
+        model: 'claude-sonnet-5',
+      },
+      {
+        stop_reason: 'end_turn',
+        content: [{ type: 'text', text: 'done', citations: [] }],
+        usage: USAGE(10, 5),
+        model: 'claude-sonnet-5',
+      },
+    ];
+    let callCount = 0;
+    const fakeClient = {
+      messages: {
+        stream: () => {
+          const response = responses[callCount++];
+          return { finalMessage: async () => response as Anthropic.Message };
+        },
+      },
+    };
+
+    try {
+      await runAgent(fakeClient as unknown as Anthropic, 'q', snapshot);
+    } finally {
+      runSpy.mockRestore();
+    }
+
+    expect(seenSnapshots).toHaveLength(2);
+    // Reference equality, not just deep equality — proves it's the SAME object
+    // threaded through every turn, not a fresh fetch/copy per tool call.
+    expect(seenSnapshots[0]).toBe(snapshot);
+    expect(seenSnapshots[1]).toBe(snapshot);
   });
 
   it('threads one shared AbortSignal through every stream() call in the run', async () => {

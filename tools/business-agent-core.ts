@@ -292,9 +292,11 @@ export const tools = {
     definition: {
       name: 'getUserOrders',
       description:
-        'Get every order for one user (by numeric userId), plus a total-spend summary — reflects the ' +
-        'canonical Orders snapshot captured at the start of this request, not a fixed starting dataset. ' +
-        'Use searchUsers first if you only know the user by name.',
+        'Get this user\'s CURRENTLY RETAINED orders (by numeric userId) plus a total-spend summary ' +
+        'for that retained set — up to the most recent 30 orders; older ones have been evicted and ' +
+        'are not included, so this is not a full lifetime order history. Reflects the canonical ' +
+        'Orders snapshot captured at the start of this request, not a fixed starting dataset. Use ' +
+        'searchUsers first if you only know the user by name.',
       input_schema: {
         type: 'object' as const,
         properties: { userId: { type: 'number', description: 'Numeric user id, e.g. 3' } },
@@ -382,13 +384,30 @@ export function formatUsageLog(usage: AgentUsage, turns: number): string {
   );
 }
 
-const SYSTEM_PROMPT = `You are a business-data assistant for the Users Portal application. You answer
+// Exported (not just module-private) so tests can assert on its exact content
+// directly, in addition to asserting it's the `system` value actually sent to
+// the Anthropic API (see business-agent-core.spec.ts's "data-scope semantics"
+// tests) — the two together are what proves the prompt text and the wired-up
+// behavior haven't drifted apart.
+export const SYSTEM_PROMPT = `You are a business-data assistant for the Users Portal application. You answer
 natural-language questions about users and their orders by calling the read-only tools provided —
 never guess or fabricate user names, order totals, or ids. Call searchUsers first when you don't
 already know the relevant user id(s). When a question asks about "which users" or "who" in general
 (not a single named user), call searchUsers with no query to enumerate everyone, then check each
 one with the other tools before answering. Give a concise, business-oriented final answer — name the
-specific users and figures that drove your conclusion, not a description of which tools you called.`;
+specific users and figures that drove your conclusion, not a description of which tools you called.
+
+Data scope: every tool call within this single Ask reads the SAME current canonical Orders snapshot,
+captured once right before this request began — it does not update mid-request, and a new Ask
+(including a follow-up later in this same conversation) takes its own fresh snapshot. That snapshot
+is NOT a lifetime-complete dataset: the backend retains only the most recent 30 orders per user
+(oldest evicted first as new ones arrive). Older orders are evicted from the retained dataset and
+are unavailable to the agent/tools; there is no historical archive available to this application —
+no tool, and no other data source, can retrieve them once evicted. If a question implies full lifetime history
+("first order ever", "all historical orders", "lifetime spend", "total orders of all time," etc.),
+do NOT answer as if the current retained orders were the complete history. Say plainly that the
+available data only covers the current retained window (up to 30 recent orders per user), not a
+full historical record, and answer only for what that window actually shows.`;
 
 // ── The agentic loop — same model → tool → result → model shape as tools/agent.mjs,
 // minus the mutating-tool confirmation gate (every tool here is read-only). The
