@@ -19,10 +19,10 @@ const DEFAULT_ENDPOINT = '/api/business-agent';
 // MAX_ORDERS_PER_USER) and the agent's own tool-contract wording
 // (tools/business-agent-core.ts) — kept in sync by hand, the same
 // independent-duplication rationale as MAX_HISTORY_MESSAGE_LENGTH below (this
-// is browser code; that's a Node tool script). Surfaced here so a user reads
-// the scope of what they're asking before they ask it, not only after an
-// answer turns out to be narrower than a "how many orders total" question
-// might imply.
+// is browser code; that's a Node tool script). Surfaced via the info-icon
+// tooltip next to the descriptor (not a permanently visible line — that grew
+// the header tall enough to push "Start new conversation" onto its own row),
+// so a user who wants the scope of what they're asking can find it on demand.
 const RETAINED_ORDERS_PER_USER = 30;
 
 // Concise, meaningful example questions — deliberately NOT "Who has the most
@@ -120,7 +120,9 @@ export class BusinessAgentWidget extends HTMLElement {
   private readonly resetButton: HTMLButtonElement;
   private readonly transcriptEl: HTMLElement;
   private readonly statusEl: HTMLElement;
-  private readonly suggestionsEl: HTMLElement;
+  private readonly suggestionsBlockEl: HTMLElement;
+  private readonly infoIconEl: HTMLButtonElement;
+  private readonly tooltipEl: HTMLElement;
 
   // Prior exchanges only — the in-flight prompt is never in here while its own
   // request is pending, only appended after a successful answer. This is the
@@ -157,10 +159,24 @@ export class BusinessAgentWidget extends HTMLElement {
           padding-bottom: 0.75rem; margin-bottom: 0.75rem; border-bottom: 1px solid #e5e7eb;
         }
         h2 { margin: 0 0 0.15rem; font-size: 1.1rem; }
-        .descriptor { margin: 0; font-size: 0.8rem; color: #6b7280; }
-        /* Same muted tone as .descriptor, deliberately NOT the .status[data-state='error']
-           red — this is routine scope information, not a warning. */
-        .data-scope-hint { margin: 0.2rem 0 0; font-size: 0.75rem; color: #6b7280; }
+        .descriptor { margin: 0; font-size: 0.8rem; color: #6b7280; position: relative; }
+        .info-icon {
+          display: inline-flex; align-items: center; justify-content: center;
+          width: 1.1rem; height: 1.1rem; padding: 0; margin-left: 0.3rem;
+          border: none; border-radius: 999px; background: transparent; color: #9ca3af;
+          font-size: 0.85rem; line-height: 1; cursor: help; vertical-align: -0.15em;
+        }
+        .info-icon:hover, .info-icon:focus-visible { color: #0f766e; }
+        .info-icon:focus-visible { outline: 2px solid #0f766e; outline-offset: 1px; }
+        /* Dark-on-light neutral tooltip (same convention as native browser title
+           tooltips) — deliberately NOT the .status[data-state='error'] red or any
+           yellow/orange — this is routine scope information, not a warning. */
+        .tooltip {
+          position: absolute; z-index: 10; left: 0; top: 100%; margin-top: 0.35rem;
+          width: max-content; max-width: 16rem; padding: 0.45rem 0.6rem; border-radius: 6px;
+          background: #374151; color: #fff; font-size: 0.72rem; line-height: 1.35; font-weight: 400;
+        }
+        .tooltip[hidden] { display: none; }
         /* Composer stays above the transcript in both DOM order and layout, so its
            vertical position never moves as the conversation grows — only the bounded,
            independently-scrollable transcript below it grows/scrolls. */
@@ -177,8 +193,10 @@ export class BusinessAgentWidget extends HTMLElement {
         button[data-variant='secondary'] {
           background: transparent; color: #0f766e; border: 1px solid #0f766e;
         }
-        .suggestions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
-        .suggestions[hidden] { display: none; }
+        .suggestions-block { margin-top: 0.5rem; }
+        .suggestions-block[hidden] { display: none; }
+        .suggestions-label { margin: 0 0 0.3rem; font-size: 0.75rem; color: #6b7280; }
+        .suggestions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
         button[data-variant='chip'] {
           padding: 0.35rem 0.7rem; font-size: 0.85rem; font-weight: 400; border-radius: 999px;
           background: #f0fdfa; color: #0f766e; border: 1px solid #99f6e4;
@@ -204,8 +222,11 @@ export class BusinessAgentWidget extends HTMLElement {
       <div class="header">
         <div>
           <h2>LLM-Powered Business Agent</h2>
-          <p class="descriptor">Claude API · Tool calling · Multi-turn context</p>
-          <p class="data-scope-hint">Answers use the current retained order snapshot — up to ${RETAINED_ORDERS_PER_USER} orders per user, not full order history.</p>
+          <p class="descriptor">
+            Claude API · Tool calling · Multi-turn context
+            <button type="button" class="info-icon" aria-describedby="data-scope-tooltip" aria-label="About this agent's data scope">ⓘ</button>
+            <span id="data-scope-tooltip" role="tooltip" class="tooltip" hidden>Answers use the current retained order snapshot — up to ${RETAINED_ORDERS_PER_USER} orders per user, not full order history.</span>
+          </p>
         </div>
         <button type="button" class="reset-button" data-variant="secondary" aria-label="Start new conversation">Start new conversation</button>
       </div>
@@ -213,8 +234,11 @@ export class BusinessAgentWidget extends HTMLElement {
         <input type="text" placeholder="Ask a business question…" aria-label="Business question" required />
         <button type="submit">Ask</button>
       </form>
-      <div class="suggestions" role="group" aria-label="Suggested questions">
-        ${SUGGESTED_PROMPTS.map((prompt) => `<button type="button" data-variant="chip">${prompt}</button>`).join('')}
+      <div class="suggestions-block">
+        <p class="suggestions-label" id="suggestions-label">Suggested questions — or ask anything about the current orders</p>
+        <div class="suggestions" role="group" aria-labelledby="suggestions-label">
+          ${SUGGESTED_PROMPTS.map((prompt) => `<button type="button" data-variant="chip">${prompt}</button>`).join('')}
+        </div>
       </div>
       <div class="status" role="status"></div>
       <div class="transcript" aria-live="polite"></div>
@@ -225,7 +249,9 @@ export class BusinessAgentWidget extends HTMLElement {
     this.resetButton = shadow.querySelector('.reset-button') as HTMLButtonElement;
     this.transcriptEl = shadow.querySelector('.transcript') as HTMLElement;
     this.statusEl = shadow.querySelector('.status') as HTMLElement;
-    this.suggestionsEl = shadow.querySelector('.suggestions') as HTMLElement;
+    this.suggestionsBlockEl = shadow.querySelector('.suggestions-block') as HTMLElement;
+    this.infoIconEl = shadow.querySelector('.info-icon') as HTMLButtonElement;
+    this.tooltipEl = shadow.querySelector('.tooltip') as HTMLElement;
     // Explicit, not just relying on the template's default (no `hidden`
     // attribute) — this is the same source of truth updateSuggestionsVisibility
     // uses everywhere else, so the initial state can't silently drift from it.
@@ -256,20 +282,41 @@ export class BusinessAgentWidget extends HTMLElement {
   connectedCallback() {
     this.form.addEventListener('submit', this.handleSubmit);
     this.resetButton.addEventListener('click', this.handleReset);
-    // One delegated listener on the container rather than one per chip — the
+    // One delegated listener on the wrapper rather than one per chip — the
     // chip set is static (SUGGESTED_PROMPTS never changes at runtime), so
     // there's no dynamic-add/remove case that would need per-button wiring.
-    this.suggestionsEl.addEventListener('click', this.handleSuggestionClick);
+    // The label paragraph inside the same wrapper is inert to this listener
+    // (handleSuggestionClick only acts on data-variant="chip" targets).
+    this.suggestionsBlockEl.addEventListener('click', this.handleSuggestionClick);
+    // Hover AND keyboard focus both reveal the tooltip — driven by real JS
+    // state (this.tooltipEl.hidden), not a CSS-only :hover/:focus-visible
+    // selector, so visibility is deterministic and independently testable.
+    this.infoIconEl.addEventListener('mouseenter', this.showTooltip);
+    this.infoIconEl.addEventListener('mouseleave', this.hideTooltip);
+    this.infoIconEl.addEventListener('focus', this.showTooltip);
+    this.infoIconEl.addEventListener('blur', this.hideTooltip);
   }
 
   disconnectedCallback() {
     this.form.removeEventListener('submit', this.handleSubmit);
     this.resetButton.removeEventListener('click', this.handleReset);
-    this.suggestionsEl.removeEventListener('click', this.handleSuggestionClick);
+    this.suggestionsBlockEl.removeEventListener('click', this.handleSuggestionClick);
+    this.infoIconEl.removeEventListener('mouseenter', this.showTooltip);
+    this.infoIconEl.removeEventListener('mouseleave', this.hideTooltip);
+    this.infoIconEl.removeEventListener('focus', this.showTooltip);
+    this.infoIconEl.removeEventListener('blur', this.hideTooltip);
     // An unmounted widget must not let a still-in-flight request touch it
     // once it (eventually) settles — same reasoning as the reset case below.
     this.abortInFlightRequests();
   }
+
+  private readonly showTooltip = () => {
+    this.tooltipEl.hidden = false;
+  };
+
+  private readonly hideTooltip = () => {
+    this.tooltipEl.hidden = true;
+  };
 
   private abortInFlightRequests() {
     for (const controller of this.inFlightControllers) controller.abort();
@@ -357,7 +404,7 @@ export class BusinessAgentWidget extends HTMLElement {
   // yet", so this reuses it rather than tracking a second, parallel boolean that
   // could drift out of sync with reality.
   private updateSuggestionsVisibility() {
-    this.suggestionsEl.hidden = this.history.length > 0;
+    this.suggestionsBlockEl.hidden = this.history.length > 0;
   }
 
   private renderAnswer(response: AgentResponse, prompt: string) {

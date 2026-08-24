@@ -20,7 +20,11 @@ function shadow(el: BusinessAgentWidget) {
     input: root.querySelector('input') as HTMLInputElement,
     form: root.querySelector('form') as HTMLFormElement,
     button: root.querySelector('button[type="submit"]') as HTMLButtonElement,
-    resetButton: root.querySelector('button[type="button"]') as HTMLButtonElement,
+    // Scoped to the class, not the bare `button[type="button"]` attribute
+    // selector — the info-icon (added for the data-scope tooltip) is also a
+    // type="button" element and now appears earlier in DOM order, so the old
+    // attribute-only selector would silently match it instead.
+    resetButton: root.querySelector('.reset-button') as HTMLButtonElement,
     // Transient loading/error presentation only — successful answers live in the transcript.
     status: root.querySelector('.status') as HTMLElement,
     transcript: root.querySelector('.transcript') as HTMLElement,
@@ -101,31 +105,78 @@ describe('BusinessAgentWidget', () => {
     });
   });
 
-  describe('data-scope hint', () => {
+  describe('data-scope info tooltip', () => {
     it('keeps the existing heading unchanged', () => {
       const root = mount().shadowRoot as ShadowRoot;
       expect(root.querySelector('h2')?.textContent).toBe('LLM-Powered Business Agent');
     });
 
-    it('shows concise copy explaining the retained-snapshot scope, including the 30-order cap', () => {
+    it('restores the compact header — no permanently visible scope line, so "Start new conversation" has nothing extra pushing it around', () => {
       const root = mount().shadowRoot as ShadowRoot;
-      const hint = root.querySelector('.data-scope-hint');
-      expect(hint).not.toBeNull();
-      expect(hint?.textContent).toMatch(/30/);
-      expect(hint?.textContent?.toLowerCase()).toMatch(/current|retained/);
+      expect(root.querySelector('.data-scope-hint')).toBeNull();
+      // The left column of the header is just the heading + one descriptor line
+      // (plus the inline icon/tooltip, which add no block-level height of their
+      // own) — no second paragraph competing for vertical space.
+      const headerLeft = root.querySelector('.header > div') as HTMLElement;
+      expect(headerLeft.querySelectorAll('p')).toHaveLength(1);
     });
 
-    it('does not style the hint as a warning/error (not the status error color, no role="alert")', () => {
-      const el = mount();
-      const root = el.shadowRoot as ShadowRoot;
-      const hint = root.querySelector('.data-scope-hint') as HTMLElement;
-      expect(hint.getAttribute('role')).not.toBe('alert');
-      expect(hint.className).not.toMatch(/error|warning/i);
+    it('renders an accessible, keyboard-focusable info icon next to the descriptor, describing the tooltip', () => {
+      const root = mount().shadowRoot as ShadowRoot;
+      const icon = root.querySelector('.info-icon') as HTMLButtonElement;
+      expect(icon).not.toBeNull();
+      expect(icon.tagName).toBe('BUTTON');
+      expect(icon.getAttribute('type')).toBe('button'); // never submits the form
+      expect(icon.getAttribute('aria-label')).toBeTruthy();
+      const describedById = icon.getAttribute('aria-describedby');
+      expect(describedById).toBeTruthy();
+      const tooltip = root.getElementById(describedById as string);
+      expect(tooltip?.getAttribute('role')).toBe('tooltip');
+    });
+
+    it('the tooltip contains the exact retained-snapshot copy, including the 30-order cap, and is hidden by default', () => {
+      const root = mount().shadowRoot as ShadowRoot;
+      const tooltip = root.querySelector('.tooltip') as HTMLElement;
+      expect(tooltip.hidden).toBe(true);
+      expect(tooltip.textContent).toBe(
+        'Answers use the current retained order snapshot — up to 30 orders per user, not full order history.'
+      );
+    });
+
+    it('does not style the tooltip as a warning/error (not the status error color, no role="alert")', () => {
+      const root = mount().shadowRoot as ShadowRoot;
+      const tooltip = root.querySelector('.tooltip') as HTMLElement;
+      expect(tooltip.getAttribute('role')).not.toBe('alert');
+      expect(tooltip.className).not.toMatch(/error|warning/i);
       const css = (root.querySelector('style') as HTMLStyleElement).textContent ?? '';
-      const hintRule = css.slice(css.indexOf('.data-scope-hint {'), css.indexOf('.data-scope-hint {') + 200);
-      // #b91c1c is the widget's one error color (.status[data-state='error']) — the
-      // hint must use the same muted gray as the plain .descriptor line, not that.
-      expect(hintRule).not.toMatch(/#b91c1c/);
+      const tooltipRule = css.slice(css.indexOf('.tooltip {'), css.indexOf('.tooltip {') + 300);
+      // #b91c1c is the widget's one error color (.status[data-state='error']) —
+      // the tooltip must never use it.
+      expect(tooltipRule).not.toMatch(/#b91c1c/);
+    });
+
+    it('shows the tooltip on mouse hover and hides it again on mouse leave', () => {
+      const root = mount().shadowRoot as ShadowRoot;
+      const icon = root.querySelector('.info-icon') as HTMLButtonElement;
+      const tooltip = root.querySelector('.tooltip') as HTMLElement;
+
+      icon.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+      expect(tooltip.hidden).toBe(false);
+
+      icon.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
+      expect(tooltip.hidden).toBe(true);
+    });
+
+    it('shows the tooltip on keyboard focus and hides it again on blur', () => {
+      const root = mount().shadowRoot as ShadowRoot;
+      const icon = root.querySelector('.info-icon') as HTMLButtonElement;
+      const tooltip = root.querySelector('.tooltip') as HTMLElement;
+
+      icon.dispatchEvent(new FocusEvent('focus'));
+      expect(tooltip.hidden).toBe(false);
+
+      icon.dispatchEvent(new FocusEvent('blur'));
+      expect(tooltip.hidden).toBe(true);
     });
   });
 
@@ -135,12 +186,32 @@ describe('BusinessAgentWidget', () => {
       return Array.from(root.querySelectorAll('button[data-variant="chip"]'));
     }
 
+    function suggestionsBlock(el: BusinessAgentWidget): HTMLElement {
+      return (el.shadowRoot as ShadowRoot).querySelector('.suggestions-block') as HTMLElement;
+    }
+
     it('shows exactly 3 suggestion chips while the conversation is empty, and the composer starts empty', () => {
       const el = mount();
-      const { input, suggestions } = { ...shadow(el), suggestions: (el.shadowRoot as ShadowRoot).querySelector('.suggestions') as HTMLElement };
+      const { input } = shadow(el);
       expect(input.value).toBe('');
-      expect(suggestions.hidden).toBe(false);
+      expect(suggestionsBlock(el).hidden).toBe(false);
       expect(chips(el)).toHaveLength(3);
+    });
+
+    it('labels the chips as optional, muted, secondary suggestions — not the only supported questions', () => {
+      const el = mount();
+      const root = el.shadowRoot as ShadowRoot;
+      const label = root.querySelector('.suggestions-label');
+      expect(label?.textContent).toBe('Suggested questions — or ask anything about the current orders');
+      // The label visually/structurally precedes the chips, inside the same
+      // wrapper that shows/hides them together.
+      const block = suggestionsBlock(el);
+      expect(block.contains(label)).toBe(true);
+      expect(block.querySelector('.suggestions-label + .suggestions')).not.toBeNull();
+      // The chip group's accessible name comes from the visible label, not a
+      // second, redundant aria-label.
+      const group = root.querySelector('.suggestions') as HTMLElement;
+      expect(group.getAttribute('aria-labelledby')).toBe(label?.id);
     });
 
     it('uses retention-safe example questions, not "who has the most orders"-style questions', () => {
@@ -170,21 +241,21 @@ describe('BusinessAgentWidget', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it('hides suggestions after the conversation has a first exchange', async () => {
+    it('hides suggestions (chips AND the label) after the conversation has a first exchange', async () => {
       vi.stubGlobal(
         'fetch',
         vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ answer: 'answer', trace: [], turns: 1 }) })
       );
 
       const el = mount();
-      const suggestions = (el.shadowRoot as ShadowRoot).querySelector('.suggestions') as HTMLElement;
-      expect(suggestions.hidden).toBe(false);
+      const block = suggestionsBlock(el);
+      expect(block.hidden).toBe(false);
 
       await submit(el, 'a question');
-      await vi.waitFor(() => expect(suggestions.hidden).toBe(true));
+      await vi.waitFor(() => expect(block.hidden).toBe(true));
     });
 
-    it('restores suggestions on "Start new conversation"', async () => {
+    it('restores suggestions (chips AND the label) on "Start new conversation"', async () => {
       vi.stubGlobal(
         'fetch',
         vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ answer: 'answer', trace: [], turns: 1 }) })
@@ -192,26 +263,27 @@ describe('BusinessAgentWidget', () => {
 
       const el = mount();
       const { resetButton } = shadow(el);
-      const suggestions = (el.shadowRoot as ShadowRoot).querySelector('.suggestions') as HTMLElement;
+      const block = suggestionsBlock(el);
 
       await submit(el, 'a question');
-      await vi.waitFor(() => expect(suggestions.hidden).toBe(true));
+      await vi.waitFor(() => expect(block.hidden).toBe(true));
 
       resetButton.click();
-      expect(suggestions.hidden).toBe(false);
+      expect(block.hidden).toBe(false);
       expect(chips(el)).toHaveLength(3);
+      expect((el.shadowRoot as ShadowRoot).querySelector('.suggestions-label')).not.toBeNull();
     });
 
     it('a failed request does not hide suggestions (history stays empty)', async () => {
       vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
 
       const el = mount();
-      const suggestions = (el.shadowRoot as ShadowRoot).querySelector('.suggestions') as HTMLElement;
+      const block = suggestionsBlock(el);
       const { status } = shadow(el);
 
       await submit(el, 'this one fails');
       await vi.waitFor(() => expect(status.dataset['state']).toBe('error'));
-      expect(suggestions.hidden).toBe(false);
+      expect(block.hidden).toBe(false);
     });
   });
 
