@@ -1,5 +1,5 @@
 
-# 👤 Users Portal
+# 👥 Users Portal
 
 This repository explores how the same frontend domain can evolve across:
 
@@ -90,16 +90,16 @@ A Claude-powered agent that answers natural-language questions over live Users/O
 
 Same domain, same facade contract (`UserOrdersVm & IUsersFacadeInteractions`), idiomatic internals per framework:
 
-| Concern | Angular | React |
-| :--- | :--- | :--- |
-| Server/domain state | NgRx + NgRx Entity (normalized, effects) | TanStack Query (`staleTime: Infinity` — WS is the sole freshness signal) |
-| UI-only state | NgRx (selection, notifications) | Zustand |
-| Reactivity model | Signals, `store.selectSignal` → `$vm` | `useMemo` in the facade → plain VM object |
-| Facade | `UsersFacade`, root-scoped DI (`providedIn: 'root'`) | `useUsersFacade()` hook, component-scoped |
-| Real-time WS singleton | NgRx Effect (framework-guaranteed singleton) | `useOrdersStream()` mounted once in `App` + pending-buffer for not-yet-loaded users |
-| Render perf | `OnPush` + Signals | `React.memo` + memoised facade values |
-| Virtual scroll | CDK `cdk-virtual-scroll-viewport` | `@tanstack/react-virtual` |
-| Notifications | `OrderNotificationsService` + NgRx | Zustand actions + module-level dismiss timers |
+| Concern | Angular | React | Vue |
+| :--- | :--- | :--- | :--- |
+| Server/domain state | NgRx + NgRx Entity (normalized, effects) | TanStack Query (`staleTime: Infinity` — WS is the sole freshness signal) | TanStack Vue Query (`staleTime: Infinity` — WS is the sole freshness signal) |
+| UI-only state | NgRx (selection, notifications) | Zustand | Pinia (notifications; selection stays in the URL) |
+| Reactivity model | Signals, `store.selectSignal` → `$vm` | `useMemo` in the facade → plain VM object | `computed()` refs exposed by the facade |
+| Facade | `UsersFacade`, root-scoped DI (`providedIn: 'root'`) | `useUsersFacade()` hook, component-scoped | `useUsersFacade()` composable → `ComputedRef` VM fields |
+| Real-time WS singleton | NgRx Effect (framework-guaranteed singleton) | `useOrdersStream()` mounted once in `App` + pending-buffer for not-yet-loaded users | `useOrdersStream()` mounted once in `App` + pending buffer / eviction tombstones |
+| Render perf | `OnPush` + Signals | `React.memo` + memoised facade values | Vue computed dependency tracking + reactive rendering |
+| Virtual scroll | CDK `cdk-virtual-scroll-viewport` | `@tanstack/react-virtual` | `@tanstack/vue-virtual` |
+| Notifications | `OrderNotificationsService` + NgRx | Zustand actions + module-level dismiss timers | Pinia actions + module-level dismiss timers |
 
 ## 🔀 Hybrid Microfrontend Architecture
 
