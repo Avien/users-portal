@@ -55,7 +55,7 @@ The UI lists users and their orders. Selecting a user loads orders lazily with p
 ```bash
 npm run mock:ws && npm run start:react
 ```
-On the first WebSocket connection after a server-process start, the mock server emits three demo orders for the same user (~0.5s/~1.5s/~2.5s in) — the first is swallowed by the monitoring rule's own learning tick, the second (>= $500) triggers the warning toast, the third triggers the critical burst toast — without waiting for the random stream. That startup burst is scheduled once per server process, not once per connection: a later visitor connecting to an already-running process (including on Railway in production) does not trigger another burst — they simply join the ongoing process-level random order stream already in progress, with nothing in the UI to distinguish "just joined a live process" from "was already watching it" (see the *Live WebSocket order visual feedback* item in [docs/roadmap.md](docs/roadmap.md)'s Post-production / Portfolio Polish section). Connecting a second tab/framework does not cause more orders to be generated — generation is a property of the process, not the connection count. In production the same server runs persistently on Railway; Angular, React, and Vue each read its URL from their own environment config — all three are production-deployed, production-configured, and read the same live canonical backend.
+On the first WebSocket connection after a server-process start, the mock backend emits a short 3-order demo burst: the first establishes the monitoring baseline, the second triggers a high-value warning, and the third triggers a critical burst notification. The burst runs only once per process; later visitors simply join the ongoing 5–15 second random order stream, and additional tabs or frameworks do not increase the event-generation rate.
 
 ## 🗄️ Canonical Orders Store
 
@@ -73,9 +73,9 @@ Every reader of Orders data — each frontend's initial load, the WebSocket stre
        initial load                        (orders + arrival metadata)
 ```
 
-`tools/mock-orders-ws-server.mjs` owns the one canonical, in-memory order store — module-scope, shared across every connection, and the single origin for every order in the system, including ones generated after startup (the same file runs on Railway in production). Each frontend's initial load reads `GET /api/orders` (the current `Order[]`); `WS /orders` then pushes incremental updates to connected frontends. The Business Agent reads a separate `GET /api/orders-snapshot` endpoint — the same canonical store, bundled with the arrival-timestamp metadata its monitoring tools need. Without this, a browser refresh after new orders arrived would show stale mock-only data while the agent saw a different picture (or vice versa) — reading from one shared source is what keeps them in sync.
+`tools/mock-orders-ws-server.mjs` owns one canonical in-memory Orders store shared by all clients. Frontends hydrate from `GET /api/orders`, receive live deltas over `WS /orders`, and the Business Agent reads `GET /api/orders-snapshot` from that same state — keeping the UI and agent aligned.
 
-The store retains the latest 30 orders per user (`tools/orders-store.mjs`) — a small, demo-appropriate bound so a long-lived Railway process doesn't grow every reader's payload (and the Business Agent's token usage) unboundedly. Retention is centralized at the store itself, so `GET /api/orders`, `GET /api/orders-snapshot`, and every WS consumer always see the exact same retained set — newest orders always win, oldest are pruned (along with their arrival metadata) once a user crosses the cap.
+The store retains the latest 30 orders per user. New orders evict the oldest ones, so REST, WebSocket clients, and the Business Agent all converge on the same bounded current dataset.
 
 ## 🤖 LLM-Powered Business Agent
 
