@@ -3,160 +3,11 @@
 This tracks planned product and architecture direction, kept separate from
 the deep-dive docs (which document what's already built and verified).
 Every item below is explicitly tagged **Planned**, **Experimental /
-undecided**, or listed under **Completed** — nothing here should be read as
-already shipped unless marked so.
+undecided**, listed under **Post-production / Portfolio Polish**, or listed
+under **Completed** — nothing here should be read as already shipped unless
+marked so.
 
 ## Planned
-
-### Product-Facing Business AI Agent
-
-The repository already demonstrates two *development*-facing AI use cases —
-autonomous feature scaffolding (`tools/agent.mjs`) and architecture
-enforcement (`tools/pr-review-agent.mjs`), see
-[Agentic AI Development](./agentic-workflow.md). The natural next step is
-applying the same LLM + tool-calling pattern to the *product* itself: a
-business-domain agent that answers natural-language questions over the
-existing Users/Orders data.
-
-```text
-Development agent (today):          Business agent:
-
-Developer goal                      User question
-    ↓                                    ↓
-LLM                                  LLM
-    ↓                                    ↓
-read_file / edit_file /             searchUsers / getUserOrders /
-scaffold_domain / run_validation    getOrderMonitoringSignals
-                                         ↓
-                                     LLM combines results
-                                         ↓
-                                     Business-oriented answer
-```
-
-**Example prompts already working end-to-end via the Phase 1 server:**
-- "Find users with recent high-value orders and summarize which users need attention."
-- "Show me the most important users to review based on their recent order activity and explain why."
-
-*(Burst-order detection — multiple orders for the same user in a short
-window — is out of scope for Phase 1: the static mock dataset the tools
-read from has no order-arrival timestamps. It would need the live WS
-stream's data, not this REST mock data, so it stays out of scope unless
-timestamped/live-stream data is added.)*
-
-#### Phase 1 — Business Agent Engine ✅ Implemented
-
-- Direct Claude API integration, structured tool/function calling, a
-  multi-step tool-use loop (same hand-rolled pattern as `tools/agent.mjs`)
-- 3 typed, read-only business tools (`searchUsers`, `getUserOrders`,
-  `getOrderMonitoringSignals`), thin wrappers reusing existing
-  `@portal/users/utils` logic — no reimplemented domain logic
-- Local `POST /api/business-agent` (`tools/business-agent-server.ts`)
-- Tests covering the tools and the orchestration loop
-
-#### Phase 2 — Shared Web Component ✅ Implemented
-
-- Framework-free **`<business-agent-widget>`** (`libs/business-agent-widget`)
-  — Shadow DOM, configurable `endpoint` attribute, loading/error/answer
-  states, built once as a real Vite lib-mode bundle
-- Typed public `CustomEvent` contract (`BUSINESS_AGENT_ANSWER_EVENT` /
-  `BUSINESS_AGENT_ERROR_EVENT` + detail interfaces), exported from the
-  lib's public `index.ts`
-- Tests covering the widget's behavior and contract
-
-#### Phase 3 — Host Integration ✅ Implemented
-
-The same `<business-agent-widget>` gets dropped into all three apps, not
-reimplemented per framework — this is exactly what the Phase 2 Web
-Component pivot exists to avoid.
-
-```text
-Angular ─┐
-React   ─┼── <business-agent-widget>
-Vue     ─┘
-```
-
-Each host app should:
-- load/register the shared Web Component
-- render the same `<business-agent-widget>` — no per-framework AI UI
-- use the exported typed event contract where host-level integration is
-  useful (e.g. reacting to an answer), not as a requirement
-- avoid a framework-specific Business Agent facade unless there's a
-  genuine framework-state requirement — the widget owns its own state
-- contain no LLM orchestration or business-agent logic — that stays
-  server-side, unchanged from Phase 1
-
-#### Phase 4 — Production API / Deployment ✅ Implemented
-
-`tools/business-agent-server.ts` remains a Phase 1 development adapter
-(`node:http` on `localhost:8787`) — it is not the production architecture.
-`/api/business-agent` is the real deployed Vercel serverless endpoint,
-reusing the same `runAgent`/tool logic as-is, with no duplicated agent
-implementation.
-
-```text
-POST /api/business-agent
-        ↓
-Vercel serverless handler
-        ↓
-existing Business Agent orchestration (runAgent)
-        ↓
-Claude API — bounded tool-calling loop
-        ↓
-business tools
-```
-
-Completed:
-- `ANTHROPIC_API_KEY` stays server-side only — never reaches the browser
-- Request/Content-Type validation, bounded body size, sanitized
-  provider/server errors (Anthropic errors logged server-side, safe
-  messages returned to the browser), bounded SDK retries
-- Vercel Firewall rate limiting (8 requests / 60s / IP →
-  `429 Too Many Requests`), verified live against the deployed Preview —
-  including confirming the invalid test requests used to trigger it never
-  reached Anthropic
-- A real cross-framework Orders source-of-truth gap was found and fixed:
-  Angular and Vue were seeding from static mock data instead of the
-  canonical Railway store. All three frontends now follow the same model —
-  canonical HTTP snapshot on load, WS deltas upserted/deduped by id on top
-  — matching what the Business Agent's `/api/orders-snapshot` already read
-- A temporary Railway PR Environment was used to verify the canonical
-  Orders backend (`/api/orders`, `/api/orders-snapshot`, `/orders` WS)
-  ahead of a `main`/production rollout, with Preview-scoped CORS
-  (`ORDERS_API_ALLOWED_ORIGINS`) rather than a wildcard
-- Verified end-to-end against the actually deployed Vercel Previews (React,
-  Angular, Vue standalone, plus the Angular-hosted Hybrid MFE composing the
-  React Preview remote) — not only `localhost`
-
-This was verified through deployed Vercel Preview + a temporary Railway PR
-Environment, **not** a `main`/production rollout — see
-[docs/business-agent.md](./business-agent.md) for the full architecture
-and deployment write-up.
-
-#### Phase 5 — Documentation / Demo Closeout 🔄 In Progress
-
-- Update [Agentic AI Development](./agentic-workflow.md) to clearly
-  distinguish all four AI surfaces in this repo: the Claude Code /
-  agentic development workflow, the autonomous development agent
-  (`tools/agent.mjs`), the PR review agent (`tools/pr-review-agent.mjs`),
-  and the product-facing Business Agent
-- Add a dedicated Business Agent architecture doc
-  ([docs/business-agent.md](./business-agent.md))
-- Update the README only where it improves portfolio discoverability
-- Document a few real example prompts grounded in actual mock data/tests
-- Move this roadmap item from in-progress to **Completed** once the above
-  and an independent review of the PR are done
-
-```text
-Phase 1  Business Agent engine                      ✅
-Phase 2  Shared Web Component                       ✅
-Phase 3  Angular / React / Vue host integration      ✅
-Phase 4  Deployed /api/business-agent + Preview verification ✅
-Phase 5  Docs + live-demo closeout                   🔄
-```
-
-**Not complete until Phase 5** — Phase 4 (real deployment, verified against
-deployed Vercel Previews) is done; Phase 5 (documentation/demo closeout) is
-still in progress before this item moves to Completed.
 
 ### Authentication & Platform
 
@@ -212,14 +63,118 @@ worth building on its own.
   monitoring-state reset, so a dropped connection doesn't double-count
   order-burst detection on resume.
 
+## Post-production / Portfolio Polish
+
+The Business Agent's underlying architecture is shipped and
+production-verified (see **Completed** below). Everything in this section is
+presentation, documentation, or portfolio-reviewer-experience improvement
+only — none of it touches the canonical store, the agent loop, or any
+framework's data layer. Listed here (not under **Planned**) specifically to
+keep "still-being-architected" work visually separate from "already-shipped,
+being polished" work.
+
+### Live WebSocket order visual feedback
+
+- Subtle, temporary glow/pulse on a newly inserted order row
+- A small "+1" / indicator badge on another user's (unselected) tab when an
+  order arrives for them while that tab isn't the active selection
+- Optional small "Live updates connected" indicator near the orders list
+- Ephemeral **presentation** state only (e.g. a short-lived CSS class or
+  local component state keyed by order id) — explicitly not a field added to
+  the `Order` domain model or any shared contract in `@portal/users/utils`
+
+### Business Agent semantics clarity
+
+The core facts (agent answers over the current retained dataset only,
+evicted orders are gone not archived) are now documented — see
+[docs/business-agent.md](./business-agent.md#what-the-agent-can-see). What's
+still open:
+- Surface the same "current dataset only" framing in-product, not just in
+  docs — e.g. the widget's own copy/placeholder text, so an end user (not
+  just a doc reader) never mistakes an answer for full lifetime history
+- A repo-wide audit (README, other deep-dive docs) for any remaining
+  language that could imply "full history"
+- **Agent-facing semantics, not just documentation** — the system
+  prompt/tool contract (`tools/business-agent-core.ts`) doesn't currently
+  tell Claude that evicted orders once existed, so the agent isn't
+  guaranteed to volunteer the retention limitation when a question implies
+  full history (e.g. "first order ever") rather than just answering from
+  whatever the tools returned. Not done in Tier 1 — no agent code changed;
+  see [docs/business-agent.md § What the agent can see](./business-agent.md#what-the-agent-can-see)
+  for the current, honestly-scoped claim (architectural guarantee only, not
+  a behavioral one).
+
+### Business Agent UX polish
+
+- Clickable suggested-prompt chips (the example prompts already documented
+  in [docs/business-agent.md](./business-agent.md)) — the composer input
+  itself stays empty by default; clicking a suggestion fills it in without
+  auto-submitting
+- Safe, limited Markdown rendering for Claude's answer text (bold/italic/
+  lists/code spans) in place of the current plain-text-only transcript —
+  must preserve the widget's existing XSS-safety guarantee (no `innerHTML`
+  of raw provider text; a sanitizing renderer or an allow-listed manual
+  parser, not a raw HTML string)
+
+### Documentation accuracy
+
+Done in [docs/business-agent.md](./business-agent.md#demo-scale-simplifications):
+order ids are opaque / `order.userId` is authoritative, per-user FIFO
+retention capped at 30, server-side/in-memory/process-local state, a
+Railway restart resets all demo data, and the shared-across-visitors nature
+of the live demo. What's still open: cross-check the same claims read
+consistently in the README and any other deep-dive doc that touches
+Orders/retention, rather than living correctly in only one place.
+
+### Portfolio / reviewer README polish
+
+- A "For reviewers — start here" quick-tour section near the top of the README
+- A claim-to-code/test evidence table (each README claim linked to the
+  file/test that backs it)
+- CI/status badges (build, the validate jobs, the architecture-review gate)
+- A short "architecture decisions & trade-offs" summary (linking to existing
+  deep-dive docs rather than duplicating them)
+- An explicit "intentional limitations" list (demo-scale retention, no
+  persistence, no auth yet, etc.)
+- Appropriate GitHub repo topics (e.g. `nx-monorepo`, `angular`, `react`,
+  `vue`, `microfrontends`, `claude-api`, `llm-tool-use`)
+
+### Operational polish
+
+Done — the Anthropic billing/rate-limit safeguards already in place (Vercel
+Firewall rate limiting, `MAX_TURNS`, output-token cap, whole-request
+timeout, bounded SDK retries, request-body/prompt/history size caps) are
+now consolidated in one reviewer-facing table:
+[docs/business-agent.md § Cost & rate-limit safeguards](./business-agent.md#cost--rate-limit-safeguards).
+
+**Explicitly out of scope for this pass:** a persistent database,
+Redis/multi-instance architecture, a WS reconnect/resync redesign (tracked
+separately under Engineering Improvements above), broad Vue cleanup, moving
+the production agent modules out of `tools/` (see CLAUDE.md's documented
+exception for why they live there), and a PR-review-bot redesign.
+
 ## Completed
 
 A few previously-planned items that have since shipped, kept here for
 continuity rather than duplicated in full:
 
+- **Product-Facing Business AI Agent** — Claude-powered
+  `<business-agent-widget>` Web Component answering natural-language
+  questions over live Users/Orders data via structured tool calling, shared
+  verbatim across Angular/React/Vue. Delivered in five phases (engine →
+  shared widget → host integration → production deploy → docs/demo
+  closeout); production `/api/business-agent` is deployed on Vercel against
+  the canonical Orders backend on Railway, merged via #12 and smoke-tested
+  against production across all four apps (Angular, React, Vue, Hybrid MFE).
+  See [docs/business-agent.md](./business-agent.md) for the full
+  architecture and deployment write-up.
 - **Vue 3 standalone implementation** — a third parallel framework rebuild
-  of the same Users/Orders domain (alongside Angular and React), deployed
-  independently to Vercel.
+  of the same Users/Orders domain (alongside Angular and React), merged to
+  `main` and deployed independently to Vercel, production-configured and
+  production smoke-tested. Standalone only — not a Hybrid MFE host or
+  remote; the Hybrid MFE composition remains Angular host + React remote
+  (see Multi-Framework / MFE Evolution above for the still-planned "Vue as a
+  third Hybrid MFE remote" work).
 - **PR review agent as an enforced gate** — went from a planned idea to a
   required CI status check with branch protection on `main`; see
   [Agentic AI Development](./agentic-workflow.md) for the full design.
