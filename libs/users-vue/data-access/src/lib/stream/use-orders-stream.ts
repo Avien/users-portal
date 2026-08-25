@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 import { onMounted, onScopeDispose } from 'vue';
+import { useRoute } from 'vue-router';
 import { useQueryClient } from '@tanstack/vue-query';
 import type { Order, OrderMonitoringState, OrderStreamEvent, User } from '@portal/users/utils';
 import {
@@ -47,6 +48,12 @@ export function drainPendingRemovedIds(userId: number): Set<number> {
 export function useOrdersStream(): void {
   const queryClient = useQueryClient();
   const usersStore = useUsersStore();
+  // Vue Router's useRoute() returns a globally-reactive route object, not
+  // scoped to matched-route component nesting the way React Router's
+  // useParams() is — so this app-root composable can read the live selected
+  // user directly, with no need to mirror it through the store the way the
+  // React host does (see docs/roadmap.md, Live WebSocket order visual feedback).
+  const route = useRoute();
   let monitoringState: OrderMonitoringState = createOrderMonitoringState();
   let streamedOrders: Order[] = [];
   let ws: WebSocket | undefined;
@@ -108,6 +115,20 @@ export function useOrdersStream(): void {
 
       for (const payload of toastPayloads) {
         usersStore.addNotification(payload);
+      }
+
+      // Live WebSocket order visual feedback — reuses this same onmessage
+      // handler, no second subscription or connection. Reads route.params
+      // fresh on every message (not captured in a closure), so it always
+      // reflects whichever user is selected at the moment this order arrives.
+      if (removedOrderIds?.length) {
+        usersStore.clearArrivedOrders(removedOrderIds);
+      }
+      const selectedUserId = route.params['userId'] ? Number(route.params['userId']) : null;
+      if (order.userId === selectedUserId) {
+        usersStore.markOrderArrived(order.id);
+      } else {
+        usersStore.incrementUnseenOrderCount(order.userId);
       }
     };
   });

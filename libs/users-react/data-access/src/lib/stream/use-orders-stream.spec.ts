@@ -61,7 +61,12 @@ describe('useOrdersStream', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     MockWebSocket.reset();
-    useUsersStore.setState({ selectedUserId: null, notifications: [] });
+    useUsersStore.setState({
+      selectedUserId: null,
+      notifications: [],
+      recentlyArrivedOrderIds: new Set(),
+      unseenOrderCountsByUserId: {},
+    });
     // clear any pending buffer left from previous tests
     drainPendingOrders(1);
     drainPendingOrders(2);
@@ -261,5 +266,104 @@ describe('useOrdersStream', () => {
     MockWebSocket.latest().emit({ type: 'order-update', payload: ORDER_HIGH_VALUE });
 
     expect(useUsersStore.getState().notifications).toHaveLength(0);
+  });
+
+  // Live WebSocket order visual feedback (Post-production / Portfolio
+  // Polish) — this reuses the SAME ws.onmessage handler already under test
+  // above; these tests only cover the new store-wiring branch, not a second
+  // WS subscription (there isn't one — MockWebSocket.instances staying at 1
+  // throughout every test in this file is itself proof of that).
+  describe('live order feedback', () => {
+    it('marks a WS order for the currently selected user as recently arrived', () => {
+      const { queryClient, wrapper } = makeWrapper();
+      queryClient.setQueryData<Order[]>(['orders', 1], []);
+      useUsersStore.setState({ selectedUserId: 1 });
+
+      renderHook(() => useOrdersStream(), { wrapper });
+      MockWebSocket.latest().emit({ type: 'order-update', payload: ORDER_NORMAL });
+
+      expect(useUsersStore.getState().recentlyArrivedOrderIds.has(ORDER_NORMAL.id)).toBe(true);
+    });
+
+    it('clears the recently-arrived state again after the highlight duration (~2.5s)', () => {
+      const { queryClient, wrapper } = makeWrapper();
+      queryClient.setQueryData<Order[]>(['orders', 1], []);
+      useUsersStore.setState({ selectedUserId: 1 });
+
+      renderHook(() => useOrdersStream(), { wrapper });
+      MockWebSocket.latest().emit({ type: 'order-update', payload: ORDER_NORMAL });
+      expect(useUsersStore.getState().recentlyArrivedOrderIds.has(ORDER_NORMAL.id)).toBe(true);
+
+      vi.advanceTimersByTime(2500);
+
+      expect(useUsersStore.getState().recentlyArrivedOrderIds.has(ORDER_NORMAL.id)).toBe(false);
+    });
+
+    it('does NOT mark anything recently-arrived for a user that is not currently selected', () => {
+      const { queryClient, wrapper } = makeWrapper();
+      queryClient.setQueryData<Order[]>(['orders', 2], []);
+      useUsersStore.setState({ selectedUserId: 1 }); // ORDER_NORMAL is for user 1... use a different selection
+
+      const orderForUser2: Order = { id: 205, userId: 2, total: 30 };
+      renderHook(() => useOrdersStream(), { wrapper });
+      MockWebSocket.latest().emit({ type: 'order-update', payload: orderForUser2 });
+
+      expect(useUsersStore.getState().recentlyArrivedOrderIds.has(orderForUser2.id)).toBe(false);
+    });
+
+    it('increments the unseen-order count for a WS order arriving for a user who is NOT selected', () => {
+      const { wrapper } = makeWrapper();
+      useUsersStore.setState({ selectedUserId: 1 });
+
+      const orderForUser2: Order = { id: 205, userId: 2, total: 30 };
+      renderHook(() => useOrdersStream(), { wrapper });
+      MockWebSocket.latest().emit({ type: 'order-update', payload: orderForUser2 });
+
+      expect(useUsersStore.getState().unseenOrderCountsByUserId).toEqual({ 2: 1 });
+    });
+
+    it('increments cleanly across multiple unseen orders for the same unselected user (+1, +2, ...)', () => {
+      const { wrapper } = makeWrapper();
+      useUsersStore.setState({ selectedUserId: 1 });
+
+      renderHook(() => useOrdersStream(), { wrapper });
+      const ws = MockWebSocket.latest();
+      ws.emit({ type: 'order-update', payload: { id: 205, userId: 2, total: 10 } });
+      ws.emit({ type: 'order-update', payload: { id: 206, userId: 2, total: 10 } });
+      ws.emit({ type: 'order-update', payload: { id: 207, userId: 2, total: 10 } });
+
+      expect(useUsersStore.getState().unseenOrderCountsByUserId).toEqual({ 2: 3 });
+    });
+
+    it('immediately clears an evicted order id from recentlyArrivedOrderIds (retention compatibility)', () => {
+      const { queryClient, wrapper } = makeWrapper();
+      queryClient.setQueryData<Order[]>(['orders', 1], []);
+      useUsersStore.setState({ selectedUserId: 1 });
+
+      renderHook(() => useOrdersStream(), { wrapper });
+      const ws = MockWebSocket.latest();
+      ws.emit({ type: 'order-update', payload: ORDER_NORMAL });
+      expect(useUsersStore.getState().recentlyArrivedOrderIds.has(ORDER_NORMAL.id)).toBe(true);
+
+      // A later insert for the same user evicts ORDER_NORMAL under retention.
+      ws.emit({ type: 'order-update', payload: { id: 199, userId: 1, total: 5 }, removedOrderIds: [ORDER_NORMAL.id] });
+
+      expect(useUsersStore.getState().recentlyArrivedOrderIds.has(ORDER_NORMAL.id)).toBe(false);
+      expect(useUsersStore.getState().recentlyArrivedOrderIds.has(199)).toBe(true);
+      expect(() => vi.advanceTimersByTime(5000)).not.toThrow();
+    });
+
+    it('introduces no additional WebSocket connection — still exactly one instance', () => {
+      const { queryClient, wrapper } = makeWrapper();
+      queryClient.setQueryData<Order[]>(['orders', 1], []);
+      useUsersStore.setState({ selectedUserId: 1 });
+
+      renderHook(() => useOrdersStream(), { wrapper });
+      const ws = MockWebSocket.latest();
+      ws.emit({ type: 'order-update', payload: ORDER_NORMAL });
+      ws.emit({ type: 'order-update', payload: { id: 205, userId: 2, total: 10 } });
+
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
   });
 });

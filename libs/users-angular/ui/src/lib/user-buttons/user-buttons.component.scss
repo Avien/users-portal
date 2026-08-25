@@ -6,6 +6,7 @@
 }
 
 .user-button {
+  position: relative;
   border: 1px solid #cbd5e1;
   background: #fff;
   border-radius: 999px;
@@ -16,4 +17,25 @@
 .user-button.active {
   border-color: #0f172a;
   background: #e2e8f0;
+}
+
+// Live WebSocket order visual feedback (Post-production / Portfolio Polish) —
+// a small unseen-order-count indicator for a tab that isn't currently
+// selected. Text ("+N"), not color alone, is what conveys the count — see
+// UserButtonsComponent.ariaLabelFor for the equivalent screen-reader text.
+.unseen-badge {
+  position: absolute;
+  top: -0.4rem;
+  right: -0.4rem;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  padding: 0 0.25rem;
+  border-radius: 999px;
+  background: #0f766e;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1.1rem;
+  text-align: center;
+  box-shadow: 0 0 0 2px #fff;
 }

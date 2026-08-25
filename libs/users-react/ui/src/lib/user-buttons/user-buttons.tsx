@@ -1,26 +1,48 @@
 import { memo } from 'react';
 import type { CSSProperties } from 'react';
 import type { User } from '@portal/users/utils';
+import styles from './user-buttons.module.css';
 
 interface UserButtonsProps {
   users: User[];
   selectedUserId: number | null;
   onSelect: (id: number) => void;
+  unseenOrderCounts: Readonly<Record<number, number>>;
 }
 
-export const UserButtons = memo(function UserButtons({ users, selectedUserId, onSelect }: UserButtonsProps) {
+export const UserButtons = memo(function UserButtons({
+  users,
+  selectedUserId,
+  onSelect,
+  unseenOrderCounts,
+}: UserButtonsProps) {
   return (
     <div style={actionsStyle}>
-      {users.map((user) => (
-        <button
-          key={user.id}
-          type="button"
-          style={user.id === selectedUserId ? activeButtonStyle : buttonStyle}
-          onClick={() => onSelect(user.id)}
-        >
-          {user.name}
-        </button>
-      ))}
+      {users.map((user) => {
+        const isSelected = user.id === selectedUserId;
+        const unseenCount = unseenOrderCounts[user.id] ?? 0;
+        return (
+          <button
+            key={user.id}
+            type="button"
+            className={styles['button']}
+            style={isSelected ? activeButtonStyle : buttonStyle}
+            aria-label={
+              !isSelected && unseenCount > 0
+                ? `${user.name}, ${unseenCount} new order${unseenCount === 1 ? '' : 's'}`
+                : undefined
+            }
+            onClick={() => onSelect(user.id)}
+          >
+            {user.name}
+            {!isSelected && unseenCount > 0 && (
+              <span className={styles['badge']} aria-hidden="true">
+                +{unseenCount}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 });

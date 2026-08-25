@@ -25,6 +25,7 @@
     <user-buttons
       [users]="vm.users"
       [selectedUserId]="vm.selectedUserId"
+      [unseenOrderCounts]="$unseenOrderCountsByUserId()"
       (userSelected)="selectUser($event)"
     />
 
@@ -39,6 +40,8 @@
         [loading]="vm.loading"
         [loaded]="vm.loaded"
         [error]="vm.error"
+        [recentlyArrivedOrderIds]="$recentlyArrivedOrderIds()"
+        [selectedUserId]="vm.selectedUserId"
       />
     } @else if (!vm.loading && vm.loaded) {
       <p class="empty-state">Select a user</p>

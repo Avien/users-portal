@@ -75,46 +75,37 @@ being polished" work.
 
 ### Live WebSocket order visual feedback
 
-- Subtle, temporary glow/pulse on a newly inserted order row
-- A small "+1" / indicator badge on another user's (unselected) tab when an
-  order arrives for them while that tab isn't the active selection
-- Optional small "Live updates connected" indicator near the orders list
-- Ephemeral **presentation** state only (e.g. a short-lived CSS class or
-  local component state keyed by order id) — explicitly not a field added to
-  the `Order` domain model or any shared contract in `@portal/users/utils`
+- Subtle, temporary glow/pulse (~2-3s) on a newly WS-inserted order row for
+  the currently selected user, fading back to normal; HTTP hydration never
+  triggers it
+- A small "+1" (incrementing) badge on another user's (unselected) tab when
+  an order arrives for them while that tab isn't the active selection;
+  clears when that tab is selected
+- Ephemeral **presentation** state only, owned per-framework (Angular
+  facade signals, React Zustand store, Vue Pinia store) — explicitly not a
+  field added to the `Order` domain model or any shared contract in
+  `@portal/users/utils`
 
 ### Business Agent semantics clarity
 
-The core facts (agent answers over the current retained dataset only,
-evicted orders are gone not archived) are now documented — see
-[docs/business-agent.md](./business-agent.md#what-the-agent-can-see). What's
-still open:
-- Surface the same "current dataset only" framing in-product, not just in
-  docs — e.g. the widget's own copy/placeholder text, so an end user (not
-  just a doc reader) never mistakes an answer for full lifetime history
-- A repo-wide audit (README, other deep-dive docs) for any remaining
-  language that could imply "full history"
-- **Agent-facing semantics, not just documentation** — the system
-  prompt/tool contract (`tools/business-agent-core.ts`) doesn't currently
-  tell Claude that evicted orders once existed, so the agent isn't
-  guaranteed to volunteer the retention limitation when a question implies
-  full history (e.g. "first order ever") rather than just answering from
-  whatever the tools returned. Not done in Tier 1 — no agent code changed;
-  see [docs/business-agent.md § What the agent can see](./business-agent.md#what-the-agent-can-see)
-  for the current, honestly-scoped claim (architectural guarantee only, not
-  a behavioral one).
+Done — the core facts (agent answers over the current retained dataset
+only, evicted orders are gone not archived) are documented in
+[docs/business-agent.md](./business-agent.md#what-the-agent-can-see) *and*
+surfaced in-product: the widget shows an inline tooltip framing answers as
+scoped to the current retained snapshot, and the agent's own system prompt
+(`tools/business-agent-core.ts`) explicitly tells Claude that evicted
+orders once existed and instructs it not to answer as if the retained set
+were a complete lifetime history.
 
 ### Business Agent UX polish
 
-- Clickable suggested-prompt chips (the example prompts already documented
-  in [docs/business-agent.md](./business-agent.md)) — the composer input
-  itself stays empty by default; clicking a suggestion fills it in without
-  auto-submitting
-- Safe, limited Markdown rendering for Claude's answer text (bold/italic/
-  lists/code spans) in place of the current plain-text-only transcript —
-  must preserve the widget's existing XSS-safety guarantee (no `innerHTML`
-  of raw provider text; a sanitizing renderer or an allow-listed manual
-  parser, not a raw HTML string)
+Done — clickable suggested-prompt chips (composer stays empty by default;
+clicking a suggestion fills it in and immediately submits it through the
+existing form submission path) and safe, limited
+Markdown rendering for Claude's answer text (bold/italic/lists/code spans),
+rendered via an allow-listed manual parser (`safe-markdown.ts`) with no
+`innerHTML` of raw provider text — preserves the widget's existing
+XSS-safety guarantee.
 
 ### Documentation accuracy
 

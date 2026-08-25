@@ -1,6 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { MockStore, provideMockStore } from '@ngrx/store/testing';
+import { provideMockActions } from '@ngrx/effects/testing';
+import { Subject } from 'rxjs';
 import { UsersFacade } from './users.facade';
 import { UsersActions } from '../+state/users.actions';
 import { UsersSelectors } from '../+state/users.selectors';
@@ -12,10 +14,12 @@ describe('UsersFacade', () => {
   let store: MockStore;
   let mockRouter: { navigate: jest.Mock };
   let orderNotifications: { enqueue: jest.Mock; dismiss: jest.Mock; clearAll: jest.Mock };
+  let actions$: Subject<unknown>;
 
   beforeEach(() => {
     mockRouter = { navigate: jest.fn() };
     orderNotifications = { enqueue: jest.fn(), dismiss: jest.fn(), clearAll: jest.fn() };
+    actions$ = new Subject();
 
     TestBed.configureTestingModule({
       providers: [
@@ -34,7 +38,8 @@ describe('UsersFacade', () => {
             { selector: UsersSelectors.selectLoaded, value: false },
             { selector: UsersSelectors.selectError, value: null }
           ]
-        })
+        }),
+        provideMockActions(() => actions$)
       ]
     });
 
@@ -143,6 +148,112 @@ describe('UsersFacade', () => {
       facade.dismissOrderNotification('n-1');
       expect(orderNotifications.dismiss).toHaveBeenCalledTimes(1);
       expect(orderNotifications.dismiss.mock.calls[0][1]).toBe('n-1');
+    });
+  });
+
+  // Live WebSocket order visual feedback (Post-production / Portfolio Polish).
+  // The facade reacts to the SAME `ordersUpdatedFromStream` action the reducer
+  // already consumes (fed here via provideMockActions) — it never subscribes
+  // to a WebSocket/OrdersService itself, so there is structurally no way for
+  // this feature to open an additional WS connection: OrdersService isn't
+  // even provided in this test module, and the facade still works.
+  describe('live order feedback', () => {
+    const order101: Order = { id: 101, userId: 1, total: 42, status: 'pending' };
+    const order201: Order = { id: 201, userId: 2, total: 99, status: 'pending' };
+
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('marks a WS order for the currently selected user as recently arrived', () => {
+      store.overrideSelector(UsersSelectors.selectSelectedUserId, 1);
+      store.refreshState();
+
+      actions$.next(UsersActions.ordersUpdatedFromStream({ order: order101, removedOrderIds: [] }));
+
+      expect(facade.$recentlyArrivedOrderIds().has(101)).toBe(true);
+    });
+
+    it('clears the recently-arrived state again after the highlight duration (~2.5s)', () => {
+      store.overrideSelector(UsersSelectors.selectSelectedUserId, 1);
+      store.refreshState();
+
+      actions$.next(UsersActions.ordersUpdatedFromStream({ order: order101, removedOrderIds: [] }));
+      expect(facade.$recentlyArrivedOrderIds().has(101)).toBe(true);
+
+      jest.advanceTimersByTime(2500);
+
+      expect(facade.$recentlyArrivedOrderIds().has(101)).toBe(false);
+    });
+
+    it('does NOT mark anything recently-arrived for HTTP hydration (loadUserOrdersSuccess), only genuine WS arrivals', () => {
+      store.overrideSelector(UsersSelectors.selectSelectedUserId, 1);
+      store.refreshState();
+
+      actions$.next(UsersActions.loadUserOrdersSuccess({ userId: 1, orders: [order101] }));
+
+      expect(facade.$recentlyArrivedOrderIds().has(101)).toBe(false);
+    });
+
+    it('increments the unseen-order count for a WS order arriving for a user who is NOT selected', () => {
+      store.overrideSelector(UsersSelectors.selectSelectedUserId, 1);
+      store.refreshState();
+
+      actions$.next(UsersActions.ordersUpdatedFromStream({ order: order201, removedOrderIds: [] }));
+
+      expect(facade.$unseenOrderCountsByUserId()).toEqual({ 2: 1 });
+      // The selected user's own arrival never gets a badge count.
+      expect(facade.$recentlyArrivedOrderIds().has(order201.id)).toBe(false);
+    });
+
+    it('increments cleanly across multiple unseen orders for the same unselected user (+1, +2, ...)', () => {
+      store.overrideSelector(UsersSelectors.selectSelectedUserId, 1);
+      store.refreshState();
+
+      actions$.next(UsersActions.ordersUpdatedFromStream({ order: order201, removedOrderIds: [] }));
+      actions$.next(
+        UsersActions.ordersUpdatedFromStream({ order: { ...order201, id: 202 }, removedOrderIds: [] })
+      );
+      actions$.next(
+        UsersActions.ordersUpdatedFromStream({ order: { ...order201, id: 203 }, removedOrderIds: [] })
+      );
+
+      expect(facade.$unseenOrderCountsByUserId()).toEqual({ 2: 3 });
+    });
+
+    it('clears a user\'s unseen-order badge once their tab is selected', () => {
+      store.overrideSelector(UsersSelectors.selectSelectedUserId, 1);
+      store.overrideSelector(UsersSelectors.selectLoadedUserOrderIds, [1, 2]);
+      store.refreshState();
+
+      actions$.next(UsersActions.ordersUpdatedFromStream({ order: order201, removedOrderIds: [] }));
+      expect(facade.$unseenOrderCountsByUserId()).toEqual({ 2: 1 });
+
+      facade.selectUserFromRoute(2);
+
+      expect(facade.$unseenOrderCountsByUserId()).toEqual({});
+    });
+
+    it('immediately clears an evicted order id from the recently-arrived set (retention compatibility)', () => {
+      store.overrideSelector(UsersSelectors.selectSelectedUserId, 1);
+      store.refreshState();
+
+      actions$.next(UsersActions.ordersUpdatedFromStream({ order: order101, removedOrderIds: [] }));
+      expect(facade.$recentlyArrivedOrderIds().has(101)).toBe(true);
+
+      // A later insert for the same user evicts order 101 under retention.
+      const newOrder: Order = { id: 199, userId: 1, total: 5, status: 'pending' };
+      actions$.next(UsersActions.ordersUpdatedFromStream({ order: newOrder, removedOrderIds: [101] }));
+
+      expect(facade.$recentlyArrivedOrderIds().has(101)).toBe(false);
+      expect(facade.$recentlyArrivedOrderIds().has(199)).toBe(true);
+
+      // The now-cancelled timer for 101 must not throw or resurrect anything.
+      expect(() => jest.advanceTimersByTime(5000)).not.toThrow();
     });
   });
 });
