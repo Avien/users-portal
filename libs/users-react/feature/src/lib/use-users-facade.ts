@@ -11,7 +11,17 @@ import {
   drainPendingRemovedIds,
 } from '@portal/users-react/data-access';
 
-export function useUsersFacade(): UserOrdersVm & IUsersFacadeInteractions {
+// Live WebSocket order visual feedback (Post-production / Portfolio Polish,
+// see docs/roadmap.md) — deliberately NOT folded into UserOrdersVm: it's
+// ephemeral presentation state, not part of the shared cross-framework VM
+// contract (mirrors the Angular facade's separate $recentlyArrivedOrderIds /
+// $unseenOrderCountsByUserId signals).
+interface LiveOrderFeedbackVm {
+  recentlyArrivedOrderIds: ReadonlySet<number>;
+  unseenOrderCountsByUserId: Readonly<Record<number, number>>;
+}
+
+export function useUsersFacade(): UserOrdersVm & IUsersFacadeInteractions & LiveOrderFeedbackVm {
   const queryClient = useQueryClient();
   const { userId } = useParams<{ userId: string }>();
   const selectedUserId = userId ? Number(userId) : null;
@@ -20,6 +30,8 @@ export function useUsersFacade(): UserOrdersVm & IUsersFacadeInteractions {
 
   const notifications = useUsersStore((s) => s.notifications);
   const dismissNotification = useUsersStore((s) => s.dismissNotification);
+  const recentlyArrivedOrderIds = useUsersStore((s) => s.recentlyArrivedOrderIds);
+  const unseenOrderCountsByUserId = useUsersStore((s) => s.unseenOrderCountsByUserId);
 
   const usersQuery = useQuery({
     queryKey: ['users'],
@@ -49,6 +61,18 @@ export function useUsersFacade(): UserOrdersVm & IUsersFacadeInteractions {
       navigate(`/users/${usersQuery.data[0].id}`, { replace: true });
     }
   }, [usersQuery.data, userId, navigate]);
+
+  // Mirror the route-derived selectedUserId into the store so useOrdersStream
+  // — mounted once at the App root, above this routed facade — can tell
+  // whether an arriving WS order is for the user currently being looked at.
+  // Also clears that user's unseen-order badge on selection, same as the
+  // Angular/Vue equivalents.
+  useEffect(() => {
+    useUsersStore.getState().setSelectedUserId(selectedUserId);
+    if (selectedUserId !== null) {
+      useUsersStore.getState().clearUnseenOrderCount(selectedUserId);
+    }
+  }, [selectedUserId]);
 
   // Merge any WS orders that arrived before this user's API fetch completed.
   // The fetch now reads the same canonical live store those WS orders came
@@ -86,5 +110,7 @@ export function useUsersFacade(): UserOrdersVm & IUsersFacadeInteractions {
     notifications,
     selectUser,
     dismissOrderNotification: dismissNotification,
+    recentlyArrivedOrderIds,
+    unseenOrderCountsByUserId,
   };
 }

@@ -18,7 +18,17 @@ type UsersFacade = {
   [K in keyof UserOrdersVm]: ComputedRef<UserOrdersVm[K]>;
 } & IUsersFacadeInteractions;
 
-export function useUsersFacade(): UsersFacade {
+// Live WebSocket order visual feedback (Post-production / Portfolio Polish,
+// see docs/roadmap.md) — deliberately NOT folded into UserOrdersVm: it's
+// ephemeral presentation state, not part of the shared cross-framework VM
+// contract (mirrors the Angular facade's separate $recentlyArrivedOrderIds /
+// $unseenOrderCountsByUserId signals).
+type LiveOrderFeedback = {
+  recentlyArrivedOrderIds: ComputedRef<ReadonlySet<number>>;
+  unseenOrderCountsByUserId: ComputedRef<Readonly<Record<number, number>>>;
+};
+
+export function useUsersFacade(): UsersFacade & LiveOrderFeedback {
   const route = useRoute();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -102,6 +112,15 @@ export function useUsersFacade(): UsersFacade {
     { immediate: true },
   );
 
+  // Effect 3 — clear a user's unseen-order badge once they're selected.
+  watch(
+    selectedUserId,
+    (userId) => {
+      if (userId !== null) usersStore.clearUnseenOrderCount(userId);
+    },
+    { immediate: true },
+  );
+
   return {
     // ── UserOrdersVm (per-field computed refs) ──
     users: computed(() => usersQuery.data.value ?? []),
@@ -118,5 +137,9 @@ export function useUsersFacade(): UsersFacade {
       router.push(`/users/${id}`);
     },
     dismissOrderNotification: usersStore.dismissNotification,
+
+    // ── Live order feedback ──
+    recentlyArrivedOrderIds: computed(() => usersStore.recentlyArrivedOrderIds),
+    unseenOrderCountsByUserId: computed(() => usersStore.unseenOrderCountsByUserId),
   };
 }

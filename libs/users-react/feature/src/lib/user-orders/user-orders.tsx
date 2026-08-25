@@ -4,8 +4,20 @@ import { UserButtons, UserName, UserTotalOrders, OrdersCard, ToastStack } from '
 import styles from './user-orders.module.css';
 
 export function UserOrders() {
-  const { users, loading, loaded, error, selectedUserId, selectedUserSummary, orders, selectUser, notifications, dismissOrderNotification } =
-    useUsersFacade();
+  const {
+    users,
+    loading,
+    loaded,
+    error,
+    selectedUserId,
+    selectedUserSummary,
+    orders,
+    selectUser,
+    notifications,
+    dismissOrderNotification,
+    recentlyArrivedOrderIds,
+    unseenOrderCountsByUserId,
+  } = useUsersFacade();
 
   return (
     <>
@@ -21,7 +33,12 @@ export function UserOrders() {
 
       {error && <p style={errorStyle}>{error}</p>}
 
-      <UserButtons users={users} selectedUserId={selectedUserId} onSelect={selectUser} />
+      <UserButtons
+        users={users}
+        selectedUserId={selectedUserId}
+        onSelect={selectUser}
+        unseenOrderCounts={unseenOrderCountsByUserId}
+      />
 
       {selectedUserSummary ? (
         <>
@@ -29,7 +46,14 @@ export function UserOrders() {
             <UserName userName={selectedUserSummary.userName} />
             <UserTotalOrders totalAmount={selectedUserSummary.totalAmount} />
           </div>
-          <OrdersCard orders={orders} loading={ordersLoading(loading, selectedUserId)} loaded={loaded} error={error} />
+          <OrdersCard
+            orders={orders}
+            loading={ordersLoading(loading, selectedUserId)}
+            loaded={loaded}
+            error={error}
+            recentlyArrivedOrderIds={recentlyArrivedOrderIds}
+            selectedUserId={selectedUserId}
+          />
         </>
       ) : !loading && loaded ? (
         <p style={emptyStateStyle}>Select a user</p>

@@ -1,0 +1,25 @@
+/* Live WebSocket order visual feedback (Post-production / Portfolio Polish,
+   see docs/roadmap.md) — a subtle, temporary highlight on a newly-arrived
+   order row. Ephemeral presentation only; driven by a prop, not by any field
+   on the Order model or the WS wire contract. */
+
+@media (prefers-reduced-motion: no-preference) {
+  .rowNew {
+    animation: order-row-pulse 2.5s ease-out;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rowNew {
+    background-color: rgba(250, 204, 21, 0.18);
+  }
+}
+
+@keyframes order-row-pulse {
+  0% {
+    background-color: rgba(250, 204, 21, 0.4);
+  }
+  100% {
+    background-color: transparent;
+  }
+}

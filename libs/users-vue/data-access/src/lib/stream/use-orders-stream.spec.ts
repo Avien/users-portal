@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { defineComponent, h } from 'vue';
 import { mount } from '@vue/test-utils';
 import { createPinia, setActivePinia, type Pinia } from 'pinia';
+import { createRouter, createMemoryHistory, type Router } from 'vue-router';
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query';
 import { useOrdersStream, drainPendingOrders } from './use-orders-stream';
 import { useUsersStore } from '../store/users.store';
@@ -45,7 +46,17 @@ const ORDER_NORMAL: Order = { id: 103, userId: 1, total: 50 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function mountStream(queryClient: QueryClient, pinia: Pinia) {
+async function mountStream(queryClient: QueryClient, pinia: Pinia, initialPath = '/users') {
+  const router: Router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/users', component: { render: () => null } },
+      { path: '/users/:userId', component: { render: () => null } },
+    ],
+  });
+  router.push(initialPath);
+  await router.isReady();
+
   const Comp = defineComponent({
     setup() {
       useOrdersStream();
@@ -53,7 +64,7 @@ function mountStream(queryClient: QueryClient, pinia: Pinia) {
     },
   });
   return mount(Comp, {
-    global: { plugins: [pinia, [VueQueryPlugin, { queryClient }]] },
+    global: { plugins: [router, pinia, [VueQueryPlugin, { queryClient }]] },
   });
 }
 
@@ -76,16 +87,16 @@ describe('useOrdersStream', () => {
     vi.clearAllMocks();
   });
 
-  it('opens a WebSocket to the orders endpoint on mount', () => {
-    mountStream(queryClient, pinia);
+  it('opens a WebSocket to the orders endpoint on mount', async () => {
+    await mountStream(queryClient, pinia);
 
     const expectedUrl = import.meta.env['VITE_ORDERS_WS_URL']?.trim() || DEFAULT_ORDERS_WS_URL;
     expect(MockWebSocket.instances).toHaveLength(1);
     expect(MockWebSocket.latest().url).toBe(expectedUrl);
   });
 
-  it('closes the WebSocket on unmount', () => {
-    const wrapper = mountStream(queryClient, pinia);
+  it('closes the WebSocket on unmount', async () => {
+    const wrapper = await mountStream(queryClient, pinia);
     const ws = MockWebSocket.latest();
 
     wrapper.unmount();
@@ -93,48 +104,48 @@ describe('useOrdersStream', () => {
     expect(ws.close).toHaveBeenCalledOnce();
   });
 
-  it('ignores messages with unknown event types', () => {
+  it('ignores messages with unknown event types', async () => {
     queryClient.setQueryData<Order[]>(['orders', 1], []);
-    mountStream(queryClient, pinia);
+    await mountStream(queryClient, pinia);
 
     MockWebSocket.latest().emit({ type: 'unknown-event', payload: ORDER_NORMAL });
 
     expect(queryClient.getQueryData<Order[]>(['orders', 1])).toEqual([]);
   });
 
-  it('ignores malformed JSON without throwing', () => {
-    mountStream(queryClient, pinia);
+  it('ignores malformed JSON without throwing', async () => {
+    await mountStream(queryClient, pinia);
 
     expect(() => MockWebSocket.latest().emitRaw('not-json')).not.toThrow();
   });
 
-  it('appends the incoming order to the existing cache for that user', () => {
+  it('appends the incoming order to the existing cache for that user', async () => {
     const existing: Order[] = [{ id: 101, userId: 1, total: 120 }];
     queryClient.setQueryData<Order[]>(['orders', 1], existing);
 
-    mountStream(queryClient, pinia);
+    await mountStream(queryClient, pinia);
     MockWebSocket.latest().emit({ type: 'order-update', payload: ORDER_NORMAL });
 
     expect(queryClient.getQueryData<Order[]>(['orders', 1])).toEqual([...existing, ORDER_NORMAL]);
   });
 
-  it('does not duplicate an order already present in the cache (REST snapshot vs. WS race)', () => {
+  it('does not duplicate an order already present in the cache (REST snapshot vs. WS race)', async () => {
     // The initial REST fetch now reads the same canonical live store this order
     // came from, so it can race this WS message and already include it.
     const existing: Order[] = [{ id: 101, userId: 1, total: 120 }, ORDER_NORMAL];
     queryClient.setQueryData<Order[]>(['orders', 1], existing);
 
-    mountStream(queryClient, pinia);
+    await mountStream(queryClient, pinia);
     MockWebSocket.latest().emit({ type: 'order-update', payload: ORDER_NORMAL });
 
     expect(queryClient.getQueryData<Order[]>(['orders', 1])).toEqual(existing);
   });
 
-  it('removes canonically-evicted orders before upserting the incoming order (retention propagation)', () => {
+  it('removes canonically-evicted orders before upserting the incoming order (retention propagation)', async () => {
     const thirtyExisting: Order[] = Array.from({ length: 30 }, (_, i) => ({ id: i + 1, userId: 1, total: 1 }));
     queryClient.setQueryData<Order[]>(['orders', 1], thirtyExisting);
 
-    mountStream(queryClient, pinia);
+    await mountStream(queryClient, pinia);
     const NEW_ORDER: Order = { id: 999, userId: 1, total: 42 };
     MockWebSocket.latest().emit({ type: 'order-update', payload: NEW_ORDER, removedOrderIds: [1] });
 
@@ -144,23 +155,23 @@ describe('useOrdersStream', () => {
     expect(result?.some((o) => o.id === 999)).toBe(true); // new order is present
   });
 
-  it('does not remove anything when removedOrderIds is absent', () => {
+  it('does not remove anything when removedOrderIds is absent', async () => {
     const existing: Order[] = [{ id: 101, userId: 1, total: 120 }];
     queryClient.setQueryData<Order[]>(['orders', 1], existing);
 
-    mountStream(queryClient, pinia);
+    await mountStream(queryClient, pinia);
     MockWebSocket.latest().emit({ type: 'order-update', payload: ORDER_NORMAL });
 
     expect(queryClient.getQueryData<Order[]>(['orders', 1])).toEqual([...existing, ORDER_NORMAL]);
   });
 
-  it('stays bounded at the canonical retained count across repeated evicting updates', () => {
+  it('stays bounded at the canonical retained count across repeated evicting updates', async () => {
     queryClient.setQueryData<Order[]>(['orders', 1], [
       { id: 1, userId: 1, total: 1 },
       { id: 2, userId: 1, total: 1 },
     ]);
 
-    mountStream(queryClient, pinia);
+    await mountStream(queryClient, pinia);
     const ws = MockWebSocket.latest();
     ws.emit({ type: 'order-update', payload: { id: 1001, userId: 1, total: 1 }, removedOrderIds: [1] });
     ws.emit({ type: 'order-update', payload: { id: 1002, userId: 1, total: 1 }, removedOrderIds: [2] });
@@ -171,8 +182,8 @@ describe('useOrdersStream', () => {
     expect(result?.map((o) => o.id).sort()).toEqual([1002, 1003]);
   });
 
-  it('prunes an evicted id out of the pending buffer too, so it can never be drained back in (no duplicate/stale evicted order remains)', () => {
-    mountStream(queryClient, pinia);
+  it('prunes an evicted id out of the pending buffer too, so it can never be drained back in (no duplicate/stale evicted order remains)', async () => {
+    await mountStream(queryClient, pinia);
     const ws = MockWebSocket.latest();
 
     // No cache yet for user 1 — both buffer.
@@ -182,8 +193,8 @@ describe('useOrdersStream', () => {
     expect(drainPendingOrders(1)).toEqual([{ id: 2, userId: 1, total: 1 }]);
   });
 
-  it('buffers the order into pending when no cache exists for that user', () => {
-    mountStream(queryClient, pinia);
+  it('buffers the order into pending when no cache exists for that user', async () => {
+    await mountStream(queryClient, pinia);
 
     MockWebSocket.latest().emit({ type: 'order-update', payload: ORDER_NORMAL });
 
@@ -191,8 +202,8 @@ describe('useOrdersStream', () => {
     expect(drainPendingOrders(ORDER_NORMAL.userId)).toEqual([ORDER_NORMAL]);
   });
 
-  it('drainPendingOrders returns buffered orders then clears the buffer', () => {
-    mountStream(queryClient, pinia);
+  it('drainPendingOrders returns buffered orders then clears the buffer', async () => {
+    await mountStream(queryClient, pinia);
 
     MockWebSocket.latest().emit({ type: 'order-update', payload: ORDER_NORMAL });
 
@@ -200,19 +211,84 @@ describe('useOrdersStream', () => {
     expect(drainPendingOrders(ORDER_NORMAL.userId)).toEqual([]);
   });
 
-  it('resets monitoring state on unmount so remount starts with a fresh learning tick', () => {
+  it('resets monitoring state on unmount so remount starts with a fresh learning tick', async () => {
     queryClient.setQueryData<Order[]>(['orders', 1], []);
-    const wrapper = mountStream(queryClient, pinia);
+    const wrapper = await mountStream(queryClient, pinia);
     const ws1 = MockWebSocket.latest();
 
     ws1.emit({ type: 'order-update', payload: { id: 104, userId: 1, total: 600 } });
     wrapper.unmount();
     useUsersStore().$patch({ notifications: [] });
 
-    mountStream(queryClient, pinia);
+    await mountStream(queryClient, pinia);
     MockWebSocket.latest().emit({ type: 'order-update', payload: { id: 105, userId: 1, total: 600 } });
 
     // First tick after remount is a learning tick again — no toast yet.
     expect(useUsersStore().notifications).toHaveLength(0);
+  });
+
+  describe('live order feedback', () => {
+    it('marks a WS order for the currently-selected user as recently arrived', async () => {
+      await mountStream(queryClient, pinia, '/users/1');
+      MockWebSocket.latest().emit({ type: 'order-update', payload: { id: 201, userId: 1, total: 10 } });
+
+      expect(useUsersStore().recentlyArrivedOrderIds.has(201)).toBe(true);
+    });
+
+    it('clears the highlight after ~2.5s', async () => {
+      vi.useFakeTimers();
+      await mountStream(queryClient, pinia, '/users/1');
+      MockWebSocket.latest().emit({ type: 'order-update', payload: { id: 201, userId: 1, total: 10 } });
+
+      vi.advanceTimersByTime(2500);
+      expect(useUsersStore().recentlyArrivedOrderIds.has(201)).toBe(false);
+      vi.useRealTimers();
+    });
+
+    it('does not mark an order for a user other than the one currently selected', async () => {
+      await mountStream(queryClient, pinia, '/users/1');
+      MockWebSocket.latest().emit({ type: 'order-update', payload: { id: 202, userId: 2, total: 10 } });
+
+      expect(useUsersStore().recentlyArrivedOrderIds.has(202)).toBe(false);
+    });
+
+    it('increments the unseen-order count for an order arriving for a non-selected user', async () => {
+      await mountStream(queryClient, pinia, '/users/1');
+      MockWebSocket.latest().emit({ type: 'order-update', payload: { id: 202, userId: 2, total: 10 } });
+
+      expect(useUsersStore().unseenOrderCountsByUserId).toEqual({ 2: 1 });
+    });
+
+    it('increments the unseen-order count cleanly across multiple arrivals', async () => {
+      await mountStream(queryClient, pinia, '/users/1');
+      const ws = MockWebSocket.latest();
+      ws.emit({ type: 'order-update', payload: { id: 202, userId: 2, total: 10 } });
+      ws.emit({ type: 'order-update', payload: { id: 203, userId: 2, total: 10 } });
+
+      expect(useUsersStore().unseenOrderCountsByUserId).toEqual({ 2: 2 });
+    });
+
+    it('does not mark anything as recently arrived when no user is selected', async () => {
+      await mountStream(queryClient, pinia, '/users');
+      MockWebSocket.latest().emit({ type: 'order-update', payload: { id: 202, userId: 2, total: 10 } });
+
+      expect(useUsersStore().recentlyArrivedOrderIds.size).toBe(0);
+      expect(useUsersStore().unseenOrderCountsByUserId).toEqual({ 2: 1 });
+    });
+
+    it('immediately clears a highlighted order once retention evicts it', async () => {
+      await mountStream(queryClient, pinia, '/users/1');
+      const ws = MockWebSocket.latest();
+      ws.emit({ type: 'order-update', payload: { id: 201, userId: 1, total: 10 } });
+      expect(useUsersStore().recentlyArrivedOrderIds.has(201)).toBe(true);
+
+      ws.emit({ type: 'order-update', payload: { id: 999, userId: 1, total: 10 }, removedOrderIds: [201] });
+      expect(useUsersStore().recentlyArrivedOrderIds.has(201)).toBe(false);
+    });
+
+    it('opens exactly one WebSocket connection regardless of the live-feedback wiring', async () => {
+      await mountStream(queryClient, pinia, '/users/1');
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
   });
 });

@@ -58,7 +58,12 @@ function makeWrapper(initialPath = '/users') {
 
 describe('useUsersFacade', () => {
   beforeEach(() => {
-    useUsersStore.setState({ notifications: [] });
+    useUsersStore.setState({
+      notifications: [],
+      selectedUserId: null,
+      recentlyArrivedOrderIds: new Set(),
+      unseenOrderCountsByUserId: {},
+    });
     vi.mocked(dataAccess.fetchUsers).mockResolvedValue(MOCK_USERS);
     vi.mocked(dataAccess.fetchOrdersByUser).mockResolvedValue(MOCK_ORDERS);
   });
@@ -117,6 +122,37 @@ describe('useUsersFacade', () => {
     const first = result.current.selectUser;
     rerender();
     expect(result.current.selectUser).toBe(first);
+  });
+
+  describe('live order feedback wiring', () => {
+    it('mirrors the route-derived selectedUserId into the store for useOrdersStream to read', async () => {
+      renderHook(() => useUsersFacade(), { wrapper: makeWrapper('/users/2') });
+      await waitFor(() => expect(useUsersStore.getState().selectedUserId).toBe(2));
+    });
+
+    it('clears the unseen-order badge for a user once they are selected', async () => {
+      useUsersStore.setState({ unseenOrderCountsByUserId: { 2: 3 } });
+      renderHook(() => useUsersFacade(), { wrapper: makeWrapper('/users/2') });
+      await waitFor(() => expect(useUsersStore.getState().selectedUserId).toBe(2));
+      expect(useUsersStore.getState().unseenOrderCountsByUserId).toEqual({});
+    });
+
+    it('leaves other users\' unseen counts untouched on selection', async () => {
+      useUsersStore.setState({ unseenOrderCountsByUserId: { 1: 2, 2: 3 } });
+      renderHook(() => useUsersFacade(), { wrapper: makeWrapper('/users/2') });
+      await waitFor(() => expect(useUsersStore.getState().selectedUserId).toBe(2));
+      expect(useUsersStore.getState().unseenOrderCountsByUserId).toEqual({ 1: 2 });
+    });
+
+    it('exposes recentlyArrivedOrderIds and unseenOrderCountsByUserId from the store', () => {
+      useUsersStore.setState({
+        recentlyArrivedOrderIds: new Set([101]),
+        unseenOrderCountsByUserId: { 5: 1 },
+      });
+      const { result } = renderHook(() => useUsersFacade(), { wrapper: makeWrapper() });
+      expect(result.current.recentlyArrivedOrderIds).toEqual(new Set([101]));
+      expect(result.current.unseenOrderCountsByUserId).toEqual({ 5: 1 });
+    });
   });
 
   describe('WS-before-HTTP hydration race with a canonical eviction', () => {

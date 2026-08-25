@@ -1,0 +1,24 @@
+/* Live WebSocket order visual feedback (Post-production / Portfolio Polish,
+   see docs/roadmap.md) — "+N" badge for orders that arrived over WS while a
+   user's tab was not selected. Ephemeral UI state only. */
+
+.button {
+  position: relative;
+}
+
+.badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #0f766e;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  box-shadow: 0 0 0 2px #fff;
+}

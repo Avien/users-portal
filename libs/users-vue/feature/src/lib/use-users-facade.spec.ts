@@ -1,11 +1,12 @@
 import { defineComponent, h } from 'vue';
 import { mount, flushPromises } from '@vue/test-utils';
 import { createRouter, createMemoryHistory, type Router } from 'vue-router';
-import { createPinia } from 'pinia';
+import { createPinia, setActivePinia, type Pinia } from 'pinia';
 import { VueQueryPlugin, QueryClient } from '@tanstack/vue-query';
 import { MOCK_USERS, MOCK_ORDERS } from '@portal/users/utils';
 import { useUsersFacade } from './use-users-facade';
 import * as dataAccess from '@portal/users-vue/data-access';
+import { useUsersStore } from '@portal/users-vue/data-access';
 
 // Preserve the real Pinia store + drainPendingOrders — only mock the API fns,
 // so they resolve instantly (no fake timers needed). Mirrors the React spec.
@@ -14,7 +15,7 @@ vi.mock('@portal/users-vue/data-access', async (importOriginal) => {
   return { ...actual, fetchUsers: vi.fn(), fetchOrdersByUser: vi.fn() };
 });
 
-async function mountFacade(initialPath = '/users') {
+async function mountFacade(initialPath = '/users', pinia: Pinia = createPinia()) {
   const router: Router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -37,7 +38,7 @@ async function mountFacade(initialPath = '/users') {
     },
   });
   mount(Comp, {
-    global: { plugins: [router, createPinia(), [VueQueryPlugin, { queryClient }]] },
+    global: { plugins: [router, pinia, [VueQueryPlugin, { queryClient }]] },
   });
   return { facade, router };
 }
@@ -90,6 +91,40 @@ describe('useUsersFacade', () => {
     const { facade } = await mountFacade();
     expect(facade.notifications.value).toEqual([]);
     expect(facade.error.value).toBeNull();
+  });
+
+  describe('live order feedback wiring', () => {
+    it('exposes recentlyArrivedOrderIds and unseenOrderCountsByUserId from the store', async () => {
+      const pinia = createPinia();
+      setActivePinia(pinia);
+      const store = useUsersStore();
+      store.recentlyArrivedOrderIds = new Set([101]);
+      store.unseenOrderCountsByUserId = { 5: 1 };
+
+      const { facade } = await mountFacade('/users', pinia);
+      expect(facade.recentlyArrivedOrderIds.value).toEqual(new Set([101]));
+      expect(facade.unseenOrderCountsByUserId.value).toEqual({ 5: 1 });
+    });
+
+    it('clears the unseen-order badge for a user once they are selected', async () => {
+      const pinia = createPinia();
+      setActivePinia(pinia);
+      const store = useUsersStore();
+      store.unseenOrderCountsByUserId = { 2: 3 };
+
+      await mountFacade('/users/2', pinia);
+      expect(useUsersStore().unseenOrderCountsByUserId).toEqual({});
+    });
+
+    it("leaves other users' unseen counts untouched on selection", async () => {
+      const pinia = createPinia();
+      setActivePinia(pinia);
+      const store = useUsersStore();
+      store.unseenOrderCountsByUserId = { 1: 2, 2: 3 };
+
+      await mountFacade('/users/2', pinia);
+      expect(useUsersStore().unseenOrderCountsByUserId).toEqual({ 1: 2 });
+    });
   });
 
   describe('WS-order-before-HTTP-load race (pending-order drain merge)', () => {

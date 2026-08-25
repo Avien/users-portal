@@ -99,9 +99,29 @@ export function useOrdersStream(): void {
       );
       monitoringStateRef.current = next;
 
-      const { addNotification } = useUsersStore.getState();
+      const {
+        addNotification,
+        selectedUserId,
+        markOrderArrived,
+        incrementUnseenOrderCount,
+        clearArrivedOrders,
+      } = useUsersStore.getState();
       for (const payload of toastPayloads) {
         addNotification(payload);
+      }
+
+      // Live WebSocket order visual feedback (Post-production / Portfolio
+      // Polish) — reuses this same onmessage handler, no second subscription
+      // or connection. Reads selectedUserId fresh on every message (not
+      // captured in a closure), so it always reflects whichever user is
+      // selected at the moment this specific order arrives.
+      if (removedOrderIds?.length) {
+        clearArrivedOrders(removedOrderIds);
+      }
+      if (order.userId === selectedUserId) {
+        markOrderArrived(order.id);
+      } else {
+        incrementUnseenOrderCount(order.userId);
       }
     };
 

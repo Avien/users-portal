@@ -27,6 +27,10 @@ export class UserOrdersComponent {
   private readonly facade = inject(UsersFacade);
 
   readonly $vm: Signal<UserOrdersVm> = this.facade.$vm;
+  // Ephemeral presentation state, not part of $vm — see the field comments
+  // on UsersFacade itself for why these stay separate from UserOrdersVm.
+  readonly $recentlyArrivedOrderIds = this.facade.$recentlyArrivedOrderIds;
+  readonly $unseenOrderCountsByUserId = this.facade.$unseenOrderCountsByUserId;
 
   selectUser(userId: number): void {
     this.facade.selectUser(userId);

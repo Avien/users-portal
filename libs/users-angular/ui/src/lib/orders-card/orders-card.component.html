@@ -1,29 +1,39 @@
 <div class="orders-card">
-  <h2>Orders</h2>
+  <div class="orders-card-header">
+    <h2>Orders</h2>
+    @if (!liveFollow() && pendingNewOrdersCount() > 0) {
+      <button type="button" class="new-orders-indicator" (click)="resumeLiveFollow()">
+        +{{ pendingNewOrdersCount() }} new order{{ pendingNewOrdersCount() === 1 ? '' : 's' }} ↓
+      </button>
+    }
+  </div>
 
-  @if (error()) {
-    <p class="error-state">{{ error() }}</p>
-  } @else if (loading()) {
-    <p class="loading-state">Loading orders...</p>
-  } @else if (orders().length) {
-    <cdk-virtual-scroll-viewport
-      class="orders-viewport"
-      role="list"
-      aria-label="Orders"
-      [itemSize]="ordersVirtualRowHeightPx"
-      minBufferPx="200"
-      maxBufferPx="480"
-    >
-      <div
-        *cdkVirtualFor="let order of orders(); trackBy: trackByOrderId"
-        class="orders-row"
-        role="listitem"
+  <div class="orders-viewport-wrapper" [style.height.px]="ordersViewportHeightPx">
+    @if (error()) {
+      <p class="error-state">{{ error() }}</p>
+    } @else if (loading()) {
+      <p class="loading-state">Loading orders...</p>
+    } @else if (orders().length) {
+      <cdk-virtual-scroll-viewport
+        class="orders-viewport"
+        role="list"
+        aria-label="Orders"
+        [itemSize]="ordersVirtualRowHeightPx"
+        minBufferPx="200"
+        maxBufferPx="480"
       >
-        <span>#{{ order.id }}</span>
-        <strong>{{ order.total | number: '1.2-2' }}</strong>
-      </div>
-    </cdk-virtual-scroll-viewport>
-  } @else if (loaded()) {
-    <p>No orders for this user.</p>
-  }
+        <div
+          *cdkVirtualFor="let order of orders(); trackBy: trackByOrderId"
+          class="orders-row"
+          [class.orders-row--new]="recentlyArrivedOrderIds().has(order.id)"
+          role="listitem"
+        >
+          <span>#{{ order.id }}</span>
+          <strong>{{ order.total | number: '1.2-2' }}</strong>
+        </div>
+      </cdk-virtual-scroll-viewport>
+    } @else if (loaded()) {
+      <p class="empty-state">No orders for this user.</p>
+    }
+  </div>
 </div>

@@ -22,6 +22,8 @@ const {
   notifications,
   selectUser,
   dismissOrderNotification,
+  recentlyArrivedOrderIds,
+  unseenOrderCountsByUserId,
 } = useUsersFacade();
 
 const ordersLoading = computed(() => loading.value && selectedUserId.value !== null);
@@ -41,14 +43,26 @@ const ordersLoading = computed(() => loading.value && selectedUserId.value !== n
 
     <p v-if="error" class="error">{{ error }}</p>
 
-    <UserButtons :users="users" :selected-user-id="selectedUserId" @select="selectUser" />
+    <UserButtons
+      :users="users"
+      :selected-user-id="selectedUserId"
+      :unseen-order-counts="unseenOrderCountsByUserId"
+      @select="selectUser"
+    />
 
     <template v-if="selectedUserSummary">
       <div class="summary-grid">
         <UserName :user-name="selectedUserSummary.userName" />
         <UserTotalOrders :total-amount="selectedUserSummary.totalAmount" />
       </div>
-      <OrdersCard :orders="orders" :loading="ordersLoading" :loaded="loaded" :error="error" />
+      <OrdersCard
+        :orders="orders"
+        :loading="ordersLoading"
+        :loaded="loaded"
+        :error="error"
+        :recently-arrived-order-ids="recentlyArrivedOrderIds"
+        :selected-user-id="selectedUserId"
+      />
     </template>
     <p v-else-if="!loading && loaded" class="empty">Select a user</p>
   </section>

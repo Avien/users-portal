@@ -4,9 +4,13 @@
       type="button"
       class="user-button"
       [class.active]="selectedUserId() === user.id"
+      [attr.aria-label]="ariaLabelFor(user)"
       (click)="userSelected.emit(user.id)"
     >
       {{ user.name }}
+      @if (selectedUserId() !== user.id && unseenCountFor(user.id) > 0) {
+        <span class="unseen-badge" aria-hidden="true">+{{ unseenCountFor(user.id) }}</span>
+      }
     </button>
   }
 </div>
