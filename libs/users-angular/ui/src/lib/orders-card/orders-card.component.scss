@@ -84,16 +84,27 @@ h2 {
 // The CLASS itself is what's temporary — the CSS just decides how it looks
 // while present, so this stays correct even though *cdkVirtualFor recycles
 // the underlying DOM nodes as the user scrolls.
-@media (prefers-reduced-motion: no-preference) {
-  .orders-row--new {
-    animation: orders-row-pulse 2.5s ease-out;
-  }
+//
+// Deliberately unconditional (not nested in a @media block): Angular's
+// production build scopes @keyframes names per-component (e.g. orders-row-pulse
+// -> _ngcontent-xxx_orders-row-pulse) but its rewrite of `animation` references
+// to that scoped name only reaches top-level rules — one nested inside a
+// @media block keeps referencing the ORIGINAL, now-nonexistent keyframe name,
+// so the animation silently no-ops (confirmed live on the production build;
+// masked in `ng serve`, which doesn't run the same CSS optimization pass).
+// The already-top-level `.spinner` animation elsewhere in this app is the
+// proof: it scopes correctly precisely because it isn't @media-nested.
+.orders-row--new {
+  animation: orders-row-pulse 2.5s ease-out;
 }
 
-// Respect prefers-reduced-motion: a static highlight (no animation) for the
-// same duration the JS state is applied, instead of a pulsing effect.
+// Respect prefers-reduced-motion: override to a static highlight (no
+// animation) for the same duration the JS state is applied. This override
+// itself is safe to nest in @media — it has no keyframe-name reference for
+// the scoping rewrite to miss.
 @media (prefers-reduced-motion: reduce) {
   .orders-row--new {
+    animation: none;
     background-color: rgba(250, 204, 21, 0.18);
   }
 }
