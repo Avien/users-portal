@@ -124,16 +124,19 @@ portal-shell (vanilla JS)
 
 ## 🤖 Agentic AI Development
 
-Most of the implementation in this repository was built with **Claude Code**, while architecture, design, and review were led by me throughout. `CLAUDE.md` is the source of truth I maintain for those decisions — Claude Code, the autonomous agent, and the PR review bot all read it verbatim. That same source of truth is then encoded into the tooling itself:
+This repository is itself built with a deliberately **agentic** workflow, not AI-assisted autocomplete. I set the core frontend architecture — domain boundaries, the shared cross-framework contracts, per-framework isolation rules, and the initial engineering direction — and keep it encoded durably in `CLAUDE.md`, Nx module-boundary tags, generators, and automated review tooling, rather than only in my own head or in one-off PR comments. Within those guardrails, implementation itself is increasingly delegated to AI agents, primarily **Claude Code**: day to day I work more at the level of feature intent, system behavior, constraints, and review direction than by writing or personally reviewing every line.
 
 | Layer | What it does |
 | :--- | :--- |
-| **Slash commands** (`.claude/commands/`) | `/new-component`, `/sync-contract`, `/architecture-check` — say what you want in plain language, Claude routes to the right one |
-| **Nx generator** (`feature-domain`) | `npm run g:feature-domain -- <name>` scaffolds a full dual-framework feature domain (35 files, both facades, path aliases) in one command |
-| **Autonomous agent** (`tools/agent.mjs`) | A hand-rolled Claude API tool-use loop — describe a goal, it scaffolds + edits + validates across both frameworks unattended |
-| **PR review agent** (`tools/pr-review-agent.mjs`) | GitHub Actions bot — reviews every PR diff for architecture drift against `CLAUDE.md`, posts a comment, and **fails the check** on confirmed drift (required status check, once branch protection is enabled) |
+| **`CLAUDE.md`** | The architectural source of truth — module boundaries, naming, layering, framework-isolation rules — read verbatim by Claude Code, the autonomous agent, and the PR review bot, so every agent works against the same rules instead of an implicit "house style" |
+| **Slash commands** (`.claude/commands/`) | `/new-component`, `/sync-contract`, `/architecture-check` — explicit, scoped prompts for common changes, each one encoding the project's own conventions so the output doesn't depend on restating them every time |
+| **Nx generator** (`feature-domain`) | `npm run g:feature-domain -- <name>` scaffolds a full dual-framework feature domain (35 files, both facades, path aliases) in one command — boundaries a human would otherwise have to remember are structural instead |
+| **Autonomous agent** (`tools/agent.mjs`) | A hand-rolled Claude API tool-use loop — describe a goal in natural language, it scaffolds, edits, and validates across both frameworks unattended, with a confirmation gate before mutating actions |
+| **PR review agent** (`tools/pr-review-agent.mjs`) | Loads `CLAUDE.md` verbatim as its own system prompt and reviews every PR diff for architecture drift against those same rules — layer boundaries, contract discipline, naming — posting a comment and **failing the check** on confirmed drift (a required status check once branch protection is enabled) |
 
-> "The tech lead's job is to make AI follow the architecture, not invent a new one every time."
+> The open question this repository is exploring: **how far can implementation be delegated to autonomous agents while still preserving architectural consistency, maintainability, and technical quality?**
+
+Architectural control and the engineering guardrails above stay human-directed; implementation execution is increasingly delegated to agents operating inside them. That's distinct from the [LLM Business Agent](docs/business-agent.md) described earlier — the Business Agent is a Claude-powered *feature* the apps expose to end users, while this section is about how the repository itself gets built.
 
 → Full breakdown — slash command examples, the agent's tool loop, generator internals, PR review agent design: **[docs/agentic-workflow.md](docs/agentic-workflow.md)**
 
