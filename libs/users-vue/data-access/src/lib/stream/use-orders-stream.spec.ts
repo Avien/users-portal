@@ -95,6 +95,14 @@ describe('useOrdersStream', () => {
     expect(MockWebSocket.latest().url).toBe(expectedUrl);
   });
 
+  it('appends the demo-owner viewerToken to the WebSocket URL when set in localStorage', async () => {
+    localStorage.setItem('usersPortalDemoOwnerToken', 'owner-abc');
+    await mountStream(queryClient, pinia);
+
+    expect(MockWebSocket.latest().url).toContain('viewerToken=owner-abc');
+    localStorage.clear();
+  });
+
   it('closes the WebSocket on unmount', async () => {
     const wrapper = await mountStream(queryClient, pinia);
     const ws = MockWebSocket.latest();
