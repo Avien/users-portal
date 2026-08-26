@@ -21,8 +21,8 @@ function makeFakeSocket() {
   return socket;
 }
 
-function makeFakeRequest(headers: Record<string, string> = {}, remoteAddress = '127.0.0.1') {
-  return { headers, socket: { remoteAddress } };
+function makeFakeRequest(url = '/orders') {
+  return { url };
 }
 
 // A placeholder occupying a `wss.clients` slot for the recurring generator's
@@ -306,10 +306,10 @@ describe('mock-orders-ws-server — structured connection lifecycle logging', ()
     return JSON.parse(lastCall?.[0] as string);
   }
 
-  it('logs a structured connect event with the active client count and exclusion flag, never the raw IP', () => {
+  it('logs a structured connect event with the active client count and exclusion flag', () => {
     mod.attachConnectionHandler();
     const clientA = makeFakeSocket();
-    mod.wss.emit('connection', clientA, makeFakeRequest({ 'x-real-ip': '203.0.113.5' }));
+    mod.wss.emit('connection', clientA, makeFakeRequest());
 
     expect(lastLoggedJson()).toEqual({
       message: 'WS client connected',
@@ -324,8 +324,8 @@ describe('mock-orders-ws-server — structured connection lifecycle logging', ()
     mod.attachConnectionHandler();
     const clientA = makeFakeSocket();
     const clientB = makeFakeSocket();
-    mod.wss.emit('connection', clientA, makeFakeRequest({ 'x-real-ip': '203.0.113.5' }));
-    mod.wss.emit('connection', clientB, makeFakeRequest({ 'x-real-ip': '203.0.113.6' }));
+    mod.wss.emit('connection', clientA, makeFakeRequest());
+    mod.wss.emit('connection', clientB, makeFakeRequest());
 
     clientA.emit('close');
     expect(lastLoggedJson()).toEqual({
@@ -338,22 +338,20 @@ describe('mock-orders-ws-server — structured connection lifecycle logging', ()
     expect(lastLoggedJson()).toMatchObject({ message: 'WS client disconnected', activeClients: 0 });
   });
 
-  it('never includes a clientIp key in the logged line, with or without X-Real-IP present', () => {
+  it('never includes the viewer token (or any other raw identifier) in the logged line', () => {
     mod.attachConnectionHandler();
 
     const clientA = makeFakeSocket();
-    mod.wss.emit('connection', clientA, makeFakeRequest({ 'x-real-ip': '203.0.113.5' }));
-    expect(lastLoggedJson()).not.toHaveProperty('clientIp');
+    mod.wss.emit('connection', clientA, makeFakeRequest('/orders?viewerToken=super-secret-value'));
+    const logged = lastLoggedJson();
+    expect(logged).not.toHaveProperty('viewerToken');
+    expect(logged).not.toHaveProperty('token');
+    expect(JSON.stringify(logged)).not.toContain('super-secret-value');
     clientA.emit('close');
-
-    const clientB = makeFakeSocket();
-    mod.wss.emit('connection', clientB, makeFakeRequest({}, '127.0.0.1')); // local fallback path
-    expect(lastLoggedJson()).not.toHaveProperty('clientIp');
-    clientB.emit('close');
   });
 });
 
-describe('mock-orders-ws-server — DEMO_LOG_EXCLUDED_IPS (log classification only)', () => {
+describe('mock-orders-ws-server — DEMO_LOG_EXCLUDED_TOKEN (log classification only)', () => {
   let mod: Awaited<ReturnType<typeof loadFreshModule>>;
 
   beforeEach(async () => {
@@ -364,94 +362,87 @@ describe('mock-orders-ws-server — DEMO_LOG_EXCLUDED_IPS (log classification on
     mod.server.close();
   });
 
-  it('parses an unset value as no exclusions', () => {
-    expect(mod.parseExcludedIps(undefined)).toEqual([]);
-    expect(mod.parseExcludedIps('')).toEqual([]);
+  it('is never excluded when no server token is configured, regardless of viewer token', () => {
+    expect(mod.isViewerTokenExcluded('anything', '')).toBe(false);
+    expect(mod.isViewerTokenExcluded('anything', undefined)).toBe(false);
+    expect(mod.isViewerTokenExcluded('anything', null)).toBe(false);
   });
 
-  it('parses a single IP', () => {
-    expect(mod.parseExcludedIps('203.0.113.5')).toEqual(['203.0.113.5']);
+  it('is false when a server token is configured but no viewer token was sent', () => {
+    expect(mod.isViewerTokenExcluded(null, 'owner-secret')).toBe(false);
+    expect(mod.isViewerTokenExcluded(undefined, 'owner-secret')).toBe(false);
+    expect(mod.isViewerTokenExcluded('', 'owner-secret')).toBe(false);
   });
 
-  it('parses multiple comma-separated IPs, trimming whitespace', () => {
-    expect(mod.parseExcludedIps(' 203.0.113.5 , 203.0.113.6,203.0.113.7 ')).toEqual([
-      '203.0.113.5',
-      '203.0.113.6',
-      '203.0.113.7',
-    ]);
+  it('is false for a mismatched token', () => {
+    expect(mod.isViewerTokenExcluded('wrong-value', 'owner-secret')).toBe(false);
   });
 
-  it('drops empty entries from stray commas', () => {
-    expect(mod.parseExcludedIps('203.0.113.5,,203.0.113.6,')).toEqual(['203.0.113.5', '203.0.113.6']);
+  it('is true for an exact match', () => {
+    expect(mod.isViewerTokenExcluded('owner-secret', 'owner-secret')).toBe(true);
   });
 
-  it('flags a matching IP as excluded from visitor logs', () => {
-    const excluded = mod.parseExcludedIps('203.0.113.5,203.0.113.6');
-    expect(mod.isIpExcluded('203.0.113.5', excluded)).toBe(true);
+  it('is false when both sides are empty strings', () => {
+    expect(mod.isViewerTokenExcluded('', '')).toBe(false);
   });
 
-  it('does not flag a non-matching IP', () => {
-    const excluded = mod.parseExcludedIps('203.0.113.5,203.0.113.6');
-    expect(mod.isIpExcluded('198.51.100.1', excluded)).toBe(false);
+  it('extractViewerToken reads viewerToken from the query string alongside other params', () => {
+    expect(mod.extractViewerToken(makeFakeRequest('/orders?foo=bar&viewerToken=owner-secret&baz=qux'))).toBe(
+      'owner-secret'
+    );
   });
 
-  it('never excludes anything when unset', () => {
-    expect(mod.isIpExcluded('203.0.113.5', mod.parseExcludedIps(undefined))).toBe(false);
+  it('extractViewerToken returns null when the query string has no viewerToken', () => {
+    expect(mod.extractViewerToken(makeFakeRequest('/orders?foo=bar'))).toBeNull();
+    expect(mod.extractViewerToken(makeFakeRequest('/orders'))).toBeNull();
   });
 
-  it('extractClientIp prefers X-Real-IP when present', () => {
-    expect(mod.extractClientIp(makeFakeRequest({ 'x-real-ip': '203.0.113.5' }, '127.0.0.1'))).toBe('203.0.113.5');
-  });
-
-  it('extractClientIp falls back to the raw socket address when X-Real-IP is absent', () => {
-    expect(mod.extractClientIp(makeFakeRequest({}, '127.0.0.1'))).toBe('127.0.0.1');
-  });
-
-  it('extractClientIp falls back safely even without a request object at all', () => {
-    expect(mod.extractClientIp(undefined)).toBe('unknown');
+  it('extractViewerToken falls back safely without a request object or url at all', () => {
+    expect(mod.extractViewerToken(undefined)).toBeNull();
+    expect(mod.extractViewerToken({})).toBeNull();
   });
 });
 
-// End-to-end confirmation that DEMO_LOG_EXCLUDED_IPS actually reaches the
-// logged excludedFromVisitorLogs field — separate from the pure-function
-// tests above because EXCLUDED_IPS is read from process.env once at module
+// End-to-end confirmation that DEMO_LOG_EXCLUDED_TOKEN actually reaches the
+// logged isExcludedClient field — separate from the pure-function tests
+// above because the server token is read from process.env once at module
 // load, so this needs the env var set BEFORE a fresh module import.
-describe('mock-orders-ws-server — DEMO_LOG_EXCLUDED_IPS end-to-end', () => {
-  const originalEnv = process.env['DEMO_LOG_EXCLUDED_IPS'];
+describe('mock-orders-ws-server — DEMO_LOG_EXCLUDED_TOKEN end-to-end', () => {
+  const originalEnv = process.env['DEMO_LOG_EXCLUDED_TOKEN'];
   let mod: Awaited<ReturnType<typeof loadFreshModule>>;
   let logSpy: ReturnType<typeof vi.spyOn>;
 
   afterEach(() => {
-    if (originalEnv === undefined) delete process.env['DEMO_LOG_EXCLUDED_IPS'];
-    else process.env['DEMO_LOG_EXCLUDED_IPS'] = originalEnv;
+    if (originalEnv === undefined) delete process.env['DEMO_LOG_EXCLUDED_TOKEN'];
+    else process.env['DEMO_LOG_EXCLUDED_TOKEN'] = originalEnv;
     vi.restoreAllMocks();
     mod.server.close();
   });
 
-  it('marks a connecting IP found in DEMO_LOG_EXCLUDED_IPS as isExcludedClient: true', async () => {
-    process.env['DEMO_LOG_EXCLUDED_IPS'] = '203.0.113.5, 198.51.100.9';
+  it('marks a connection with a matching viewerToken as isExcludedClient: true, without logging the token', async () => {
+    process.env['DEMO_LOG_EXCLUDED_TOKEN'] = 'owner-secret';
     mod = await loadFreshModule();
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     mod.attachConnectionHandler();
 
     const client = makeFakeSocket();
-    mod.wss.emit('connection', client, makeFakeRequest({ 'x-real-ip': '203.0.113.5' }));
+    mod.wss.emit('connection', client, makeFakeRequest('/orders?viewerToken=owner-secret'));
 
     const logged = JSON.parse(logSpy.mock.calls.at(-1)?.[0] as string);
     expect(logged.isExcludedClient).toBe(true);
-    expect(logged).not.toHaveProperty('clientIp');
+    expect(JSON.stringify(logged)).not.toContain('owner-secret');
 
     client.emit('close');
   });
 
-  it('leaves a non-matching IP as isExcludedClient: false', async () => {
-    process.env['DEMO_LOG_EXCLUDED_IPS'] = '203.0.113.5';
+  it('leaves a connection with a mismatched viewerToken as isExcludedClient: false', async () => {
+    process.env['DEMO_LOG_EXCLUDED_TOKEN'] = 'owner-secret';
     mod = await loadFreshModule();
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     mod.attachConnectionHandler();
 
     const client = makeFakeSocket();
-    mod.wss.emit('connection', client, makeFakeRequest({ 'x-real-ip': '198.51.100.1' }));
+    mod.wss.emit('connection', client, makeFakeRequest('/orders?viewerToken=someone-elses-value'));
 
     const logged = JSON.parse(logSpy.mock.calls.at(-1)?.[0] as string);
     expect(logged.isExcludedClient).toBe(false);
@@ -459,9 +450,24 @@ describe('mock-orders-ws-server — DEMO_LOG_EXCLUDED_IPS end-to-end', () => {
     client.emit('close');
   });
 
-  it('excluding an IP from visitor logs does not affect order generation for that connection', async () => {
+  it('leaves a connection with no viewerToken as isExcludedClient: false, even with a server token configured', async () => {
+    process.env['DEMO_LOG_EXCLUDED_TOKEN'] = 'owner-secret';
+    mod = await loadFreshModule();
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    mod.attachConnectionHandler();
+
+    const client = makeFakeSocket();
+    mod.wss.emit('connection', client, makeFakeRequest('/orders'));
+
+    const logged = JSON.parse(logSpy.mock.calls.at(-1)?.[0] as string);
+    expect(logged.isExcludedClient).toBe(false);
+
+    client.emit('close');
+  });
+
+  it('an excluded (owner/test) connection still receives normal burst orders, with no change to active-client counting', async () => {
     vi.useFakeTimers();
-    process.env['DEMO_LOG_EXCLUDED_IPS'] = '203.0.113.5';
+    process.env['DEMO_LOG_EXCLUDED_TOKEN'] = 'owner-secret';
     mod = await loadFreshModule();
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const { getOrders } = await import('./orders-store.mjs');
@@ -469,14 +475,269 @@ describe('mock-orders-ws-server — DEMO_LOG_EXCLUDED_IPS end-to-end', () => {
 
     const before = getOrders().length;
     const client = makeFakeSocket();
-    mod.wss.emit('connection', client, makeFakeRequest({ 'x-real-ip': '203.0.113.5' }));
-    vi.advanceTimersByTime(2500); // full burst
+    mod.wss.emit('connection', client, makeFakeRequest('/orders?viewerToken=owner-secret'));
+    expect(JSON.parse(logSpy.mock.calls.at(-1)?.[0] as string)).toMatchObject({ activeClients: 1 });
 
-    expect(getOrders().length).toBe(before + 3); // burst still ran normally
+    vi.advanceTimersByTime(2500); // full burst
+    expect(getOrders().length).toBe(before + 3); // burst ran normally despite being an excluded/owner connection
 
     client.emit('close');
+    expect(JSON.parse(logSpy.mock.calls.at(-1)?.[0] as string)).toMatchObject({ activeClients: 0 });
+
     vi.clearAllTimers();
     vi.useRealTimers();
+  });
+});
+
+describe('mock-orders-ws-server — external-viewer awareness in order logs', () => {
+  const originalEnv = process.env['DEMO_LOG_EXCLUDED_TOKEN'];
+  let mod: Awaited<ReturnType<typeof loadFreshModule>>;
+  let logSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    if (originalEnv === undefined) delete process.env['DEMO_LOG_EXCLUDED_TOKEN'];
+    else process.env['DEMO_LOG_EXCLUDED_TOKEN'] = originalEnv;
+    vi.restoreAllMocks();
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    mod.server.close();
+  });
+
+  function orderLogs(): Record<string, unknown>[] {
+    return logSpy.mock.calls
+      .map((call) => JSON.parse(call[0] as string))
+      .filter((log) => log['message'] === 'WS emit order');
+  }
+
+  it('an excluded-only connection produces order logs with activeExternalClients: 0', async () => {
+    process.env['DEMO_LOG_EXCLUDED_TOKEN'] = 'owner-secret';
+    mod = await loadFreshModule();
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    mod.attachConnectionHandler();
+
+    const owner = makeFakeSocket();
+    mod.wss.emit('connection', owner, makeFakeRequest('/orders?viewerToken=owner-secret'));
+    vi.advanceTimersByTime(500); // first burst order
+
+    const logs = orderLogs();
+    expect(logs.length).toBeGreaterThan(0);
+    for (const log of logs) {
+      expect(log['activeClients']).toBe(1);
+      expect(log['activeExternalClients']).toBe(0);
+    }
+
+    owner.emit('close');
+  });
+
+  it('one normal/external client produces order logs with activeExternalClients: 1', async () => {
+    mod = await loadFreshModule();
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    mod.attachConnectionHandler();
+
+    const external = makeFakeSocket();
+    mod.wss.emit('connection', external, makeFakeRequest());
+    vi.advanceTimersByTime(500);
+
+    const logs = orderLogs();
+    expect(logs.length).toBeGreaterThan(0);
+    for (const log of logs) {
+      expect(log['activeExternalClients']).toBe(1);
+    }
+
+    external.emit('close');
+  });
+
+  it('an excluded client plus an external client: activeExternalClients counts only the external one', async () => {
+    process.env['DEMO_LOG_EXCLUDED_TOKEN'] = 'owner-secret';
+    mod = await loadFreshModule();
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    mod.attachConnectionHandler();
+
+    const owner = makeFakeSocket();
+    mod.wss.emit('connection', owner, makeFakeRequest('/orders?viewerToken=owner-secret'));
+    const external = makeFakeSocket();
+    mod.wss.emit('connection', external, makeFakeRequest());
+
+    vi.advanceTimersByTime(500);
+    const logs = orderLogs();
+    expect(logs.length).toBeGreaterThan(0);
+    for (const log of logs) {
+      expect(log['activeClients']).toBe(2);
+      expect(log['activeExternalClients']).toBe(1);
+    }
+
+    owner.emit('close');
+    external.emit('close');
+  });
+
+  it('multiple external clients increment activeExternalClients correctly', async () => {
+    mod = await loadFreshModule();
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    mod.attachConnectionHandler();
+
+    const a = makeFakeSocket();
+    const b = makeFakeSocket();
+    const c = makeFakeSocket();
+    mod.wss.emit('connection', a, makeFakeRequest());
+    mod.wss.emit('connection', b, makeFakeRequest());
+    mod.wss.emit('connection', c, makeFakeRequest());
+
+    vi.advanceTimersByTime(500);
+    const logs = orderLogs();
+    expect(logs.length).toBeGreaterThan(0);
+    expect(logs.at(-1)?.['activeExternalClients']).toBe(3);
+
+    a.emit('close');
+    b.emit('close');
+    c.emit('close');
+  });
+
+  it('an external disconnect decrements activeExternalClients', async () => {
+    mod = await loadFreshModule();
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    mod.attachConnectionHandler();
+
+    const a = makeFakeSocket();
+    const b = makeFakeSocket();
+    mod.wss.emit('connection', a, makeFakeRequest());
+    mod.wss.emit('connection', b, makeFakeRequest());
+    a.emit('close'); // one external disconnects, one remains
+
+    // b's own burst never re-fires (already-active session) — use the
+    // recurring generator to observe a fresh order log's counts instead.
+    mod.wss.clients.add(makeFakeWsClient() as never);
+    mod.scheduleNextGeneratedOrder();
+    vi.advanceTimersByTime(15000);
+
+    const logs = orderLogs();
+    expect(logs.length).toBeGreaterThan(0);
+    expect(logs.at(-1)?.['activeExternalClients']).toBe(1);
+
+    b.emit('close');
+  });
+
+  it('an excluded client disconnecting does not decrement activeExternalClients', async () => {
+    process.env['DEMO_LOG_EXCLUDED_TOKEN'] = 'owner-secret';
+    mod = await loadFreshModule();
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    mod.attachConnectionHandler();
+
+    const external = makeFakeSocket();
+    mod.wss.emit('connection', external, makeFakeRequest());
+    const owner = makeFakeSocket();
+    mod.wss.emit('connection', owner, makeFakeRequest('/orders?viewerToken=owner-secret'));
+
+    owner.emit('close'); // excluded disconnect — must not touch activeExternalClients
+
+    mod.wss.clients.add(makeFakeWsClient() as never);
+    mod.scheduleNextGeneratedOrder();
+    vi.advanceTimersByTime(15000);
+
+    const logs = orderLogs();
+    expect(logs.length).toBeGreaterThan(0);
+    expect(logs.at(-1)?.['activeExternalClients']).toBe(1); // unchanged by the owner's disconnect
+
+    external.emit('close');
+  });
+
+  it('a double-close on one socket decrements both counters exactly once, not twice, while another client is still connected', async () => {
+    mod = await loadFreshModule();
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    mod.attachConnectionHandler();
+
+    const a = makeFakeSocket();
+    const b = makeFakeSocket();
+    mod.wss.emit('connection', a, makeFakeRequest());
+    mod.wss.emit('connection', b, makeFakeRequest());
+    // Both external — count is 2 before anything closes.
+
+    a.emit('close'); // -> 1
+    a.emit('close'); // double-close for the SAME socket — must not steal b's count
+
+    mod.wss.clients.add(makeFakeWsClient() as never);
+    mod.scheduleNextGeneratedOrder();
+    vi.advanceTimersByTime(15000);
+
+    const logs = orderLogs();
+    expect(logs.length).toBeGreaterThan(0);
+    // b is still connected — the correct count is 1, not 0.
+    expect(logs.at(-1)?.['activeClients']).toBe(1);
+    expect(logs.at(-1)?.['activeExternalClients']).toBe(1);
+
+    b.emit('close'); // -> 0, normal disconnect
+    logSpy.mockClear();
+    // wss.clients still holds the placeholder added above, so the generator
+    // gate stays open — this tick exists purely to observe the counters
+    // after b's disconnect, not to test the pause-while-idle gate itself.
+    vi.advanceTimersByTime(15000);
+
+    const afterBothClosed = orderLogs();
+    expect(afterBothClosed.length).toBeGreaterThan(0);
+    expect(afterBothClosed.at(-1)?.['activeClients']).toBe(0);
+    expect(afterBothClosed.at(-1)?.['activeExternalClients']).toBe(0);
+  });
+
+  it('the viewer token never appears anywhere in an order log, even while a matching connection is active', async () => {
+    process.env['DEMO_LOG_EXCLUDED_TOKEN'] = 'owner-secret';
+    mod = await loadFreshModule();
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    mod.attachConnectionHandler();
+
+    const owner = makeFakeSocket();
+    mod.wss.emit('connection', owner, makeFakeRequest('/orders?viewerToken=owner-secret'));
+    vi.advanceTimersByTime(2500); // full burst
+
+    const logs = orderLogs();
+    expect(logs.length).toBeGreaterThan(0);
+    for (const log of logs) {
+      expect(JSON.stringify(log)).not.toContain('owner-secret');
+    }
+
+    owner.emit('close');
+  });
+});
+
+describe('mock-orders-ws-server — order log eviction field', () => {
+  let mod: Awaited<ReturnType<typeof loadFreshModule>>;
+  let logSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(async () => {
+    mod = await loadFreshModule();
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    mod.server.close();
+  });
+
+  it('includes evictedOrderId in the order log once a user crosses the retention cap', async () => {
+    const { getOrders, MAX_ORDERS_PER_USER } = await import('./orders-store.mjs');
+    const existingForUser1: { id: number; userId: number }[] = getOrders().filter(
+      (o: { userId: number }) => o.userId === 1
+    );
+    const oldestExistingId = existingForUser1[0].id;
+    const toReachCap = MAX_ORDERS_PER_USER - existingForUser1.length;
+
+    for (let i = 0; i < toReachCap; i++) mod.emit(1);
+    logSpy.mockClear();
+    mod.emit(1); // crosses the cap by one
+
+    const logged = JSON.parse(logSpy.mock.calls.at(-1)?.[0] as string);
+    expect(logged['message']).toBe('WS emit order');
+    expect(logged['evictedOrderId']).toBe(oldestExistingId);
+  });
+
+  it('omits evictedOrderId entirely while a user is at or under the retention cap', () => {
+    logSpy.mockClear();
+    mod.emit(1);
+
+    const logged = JSON.parse(logSpy.mock.calls.at(-1)?.[0] as string);
+    expect(logged).not.toHaveProperty('evictedOrderId');
   });
 });
 

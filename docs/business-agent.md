@@ -228,16 +228,58 @@ not production infrastructure:
 - No authentication/session layer — see [docs/roadmap.md](./roadmap.md)
   for the planned (not yet implemented) auth work.
 - Connection lifecycle logs on the Railway service are structured JSON
-  (`message`, `activeClients`, `isExcludedClient`) — the connecting IP itself
-  (read from Railway's `X-Real-IP` forwarded-request header, with a raw
-  socket-address fallback locally) is used only to compute `isExcludedClient`
-  and is never written to the log line. An optional `DEMO_LOG_EXCLUDED_IPS`
-  env var (comma-separated exact IPs, set manually in Railway's Production
-  Variables — never committed to the repo) flags matching connections'
-  logs with `isExcludedClient: true`. This is a **log-classification aid
-  only**: it never gates access, never changes order generation, and never
-  alters behavior for any IP — it just lets the deploy owner tell their own
-  traffic apart from real visitors when reading Railway logs.
+  (`message`, `activeClients`, `isExcludedClient`). `isExcludedClient`
+  describes that one connection/disconnection event and is driven by an
+  optional **owner/test classification token** (explicitly *not* a security
+  mechanism — see below), not by IP: the frontend may append a `viewerToken`
+  query param when opening the Orders WebSocket, and the server compares it
+  against `DEMO_LOG_EXCLUDED_TOKEN` (a Railway-only env var, never committed
+  to this repo). Each socket is classified exactly once, at connect time, and
+  that decision is reused for its eventual disconnect log too — the token is
+  never re-read afterward, never written to any log line, and never
+  persisted server-side.
+  - **Railway setup (optional):** add `DEMO_LOG_EXCLUDED_TOKEN=<a value you
+    pick>` in the service's Production Variables.
+  - **Browser setup (optional, manual, per browser/device):** open DevTools
+    on the deployed app and run
+    `localStorage.setItem('usersPortalDemoOwnerToken', '<same value as the Railway env var>')`.
+    Every Orders WebSocket connection from that browser afterward is tagged
+    `isExcludedClient: true` in Railway's logs, regardless of your current
+    public IP, network, or VPN. To stop tagging, run
+    `localStorage.removeItem('usersPortalDemoOwnerToken')`.
+  - If the token is never configured (on Railway, in the browser, or both),
+    every connection simply logs `isExcludedClient: false` — the default,
+    unauthenticated demo experience is completely unaffected.
+  - **This is log classification only, not authentication or
+    authorization**: a matched or mismatched token never gates access, never
+    changes order generation, and never alters behavior for any connection.
+- Synthetic order-generation logs (`message: "WS emit order"`) are also
+  structured JSON, additionally carrying `activeClients` and
+  `activeExternalClients` — the number of currently-connected WebSocket
+  clients, and the subset of those *not* classified as the owner/test
+  browser (i.e. clients not carrying a matching `viewerToken` — a "potential
+  external viewer" in the loosest sense, not a verified identity), at the
+  moment that specific order was generated (plus `evictedOrderId` when that
+  same insert crossed the per-user retention cap). `activeExternalClients >
+  0` means **at least one currently-connected client was not classified with
+  the owner/test token** when that order fired — useful for filtering
+  Railway logs down to order-generation activity that happened while some
+  non-excluded client was connected, separate from traffic generated only
+  while every connected client carried the owner/test token. This is
+  deliberately *not* proof that a human visitor — let alone a specific kind
+  of visitor — was watching: an unmarked connection could just as easily be
+  another of the deploy owner's own browsers/devices that simply never had
+  the token set, or an automated client, as it could be an actual outside
+  visitor. Like `isExcludedClient`, this stays a lightweight demo
+  observability aid, not analytics, auth, or security — the count is read
+  only for the log line and never influences whether an order is generated
+  or delivered.
+  - **Railway log filter:** with the field-based filter search in the
+    Railway dashboard's log view, filter to `activeExternalClients:>0`
+    (Railway parses each line's JSON and lets you filter on its fields;
+    confirm the exact comparison-operator syntax via the filter box's own
+    autocomplete, since it may render as a structured condition rather than
+    raw text depending on your Railway version).
 
 These are acceptable trade-offs for this project's goals and aren't
 "solved" with production infrastructure (a real database, Redis, etc.)

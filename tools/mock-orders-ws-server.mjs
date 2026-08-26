@@ -28,55 +28,49 @@ const randomIntInclusive = (min, max) => {
 
 const randomMoney = () => Number((Math.random() * 750 + 25).toFixed(2));
 
-// ── Visitor-log classification (see DEMO_LOG_EXCLUDED_IPS in CLAUDE.md /
-// docs) — purely a log-filtering aid, e.g. so the deploy owner can tell their
-// own traffic apart from real visitors in Railway logs. It never gates
-// access, never alters order generation, and never changes app behavior for
-// any IP — see logConnectionEvent below, its only consumer. ──
+// ── Visitor-log classification (see DEMO_LOG_EXCLUDED_TOKEN in
+// docs/business-agent.md) — purely a log-filtering aid, e.g. so the deploy
+// owner can tell their own testing traffic apart from non-excluded clients
+// (anything without a matching owner/test classification token) in Railway
+// logs. This is NOT authentication or authorization: it never gates
+// access, never alters order generation, and never changes behavior for any
+// connection — see logConnectionEvent below, its only consumer. The token is
+// never logged and never persisted anywhere server-side; it's read fresh off
+// each connecting request and compared, then discarded. Previously based on
+// the connecting IP (X-Real-IP) — replaced because the deploy owner's own
+// public IP isn't stable across networks/VPNs, unlike a fixed owner/test
+// classification token. ──
 
-// Pure + exported so every parsing edge case (unset/one/multiple/whitespace)
-// is directly testable without touching module-level env-var timing.
-export function parseExcludedIps(envValue) {
-  if (!envValue) return [];
-  return envValue
-    .split(',')
-    .map((ip) => ip.trim())
-    .filter(Boolean);
+const DEMO_LOG_EXCLUDED_TOKEN = process.env['DEMO_LOG_EXCLUDED_TOKEN'] ?? '';
+
+// Pure + exported so every edge case (server token unset, viewer token
+// absent, mismatch, exact match, both empty) is directly testable without a
+// real connection. Excluded only when BOTH sides are non-empty and match —
+// an unset server token must never accidentally match an unset/empty viewer
+// token.
+export function isViewerTokenExcluded(viewerToken, serverToken) {
+  return Boolean(serverToken) && Boolean(viewerToken) && viewerToken === serverToken;
 }
 
-export function isIpExcluded(ip, excludedIps) {
-  return excludedIps.includes(ip);
+// The WS upgrade request's URL is relative (e.g. "/orders?viewerToken=..."),
+// so a placeholder base is required to parse it with the URL API — the base
+// itself is discarded, only used to make relative-URL parsing valid. Pure +
+// exported so query-string parsing (other params present, token absent
+// entirely) is directly testable without a real socket.
+export function extractViewerToken(request) {
+  if (!request?.url) return null;
+  try {
+    return new URL(request.url, 'http://localhost').searchParams.get('viewerToken');
+  } catch {
+    return null;
+  }
 }
 
-const EXCLUDED_IPS = parseExcludedIps(process.env['DEMO_LOG_EXCLUDED_IPS']);
-
-// Railway terminates TLS/HTTP at its edge and forwards the real client
-// address via X-Real-IP on the upgrade request. Pure + exported (takes the
-// header bag + a raw fallback rather than a live `request`) so both the
-// Railway path and the local-dev fallback are directly testable without a
-// real socket.
-export function extractClientIp(request) {
-  const forwarded = request?.headers?.['x-real-ip'];
-  if (typeof forwarded === 'string' && forwarded.trim()) return forwarded.trim();
-  // Local dev / anything not behind Railway's proxy — X-Real-IP won't exist,
-  // so fall back to the raw socket address (e.g. '::1' for localhost).
-  return request?.socket?.remoteAddress ?? 'unknown';
-}
-
-// clientIp is used ONLY to compute isExcludedClient here — it is deliberately
-// not included in the logged line itself. The one declared purpose of
-// capturing it (telling the deploy owner's own traffic apart from real
-// visitors) is fully served by that boolean; persisting the raw IP in
-// Railway's logs would be incidental PII with no operational use this demo
-// actually needs.
-function logConnectionEvent(message, activeClients, clientIp) {
-  console.log(
-    JSON.stringify({
-      message,
-      activeClients,
-      isExcludedClient: isIpExcluded(clientIp, EXCLUDED_IPS),
-    })
-  );
+// Takes the already-computed isExcludedClient boolean, not the raw token —
+// each connection classifies itself exactly once (see attachConnectionHandler)
+// and this just reports that decision, never re-derives it.
+function logConnectionEvent(message, activeClients, isExcludedClient) {
+  console.log(JSON.stringify({ message, activeClients, isExcludedClient }));
 }
 
 // Computed once at startup from the canonical store's seed data, then kept current
@@ -156,13 +150,29 @@ const broadcast = (payload, removedOrderIds) => {
   }
 };
 
+// activeClients/activeExternalClients here are pure observability — read at
+// log time from the same counters attachConnectionHandler maintains, never
+// consulted anywhere in the actual generation/broadcast logic above/below.
+// A reader filtering Railway logs for activeExternalClients > 0 sees exactly
+// the order-generation activity that occurred while at least one client NOT
+// classified with the owner/test token was connected — not proof any
+// specific kind of visitor was watching, just that some other, unmarked
+// client was.
 const emit = (userId, total = randomMoney()) => {
   const id = allocateNewId(userId);
   const payload = { id, userId, total: Number(total.toFixed(2)), status: randomStatus() };
   const { evictedOrderIds } = addOrder(payload);
   console.log(
-    `WS emit order id=${payload.id} userId=${payload.userId} total=${payload.total} status=${payload.status}` +
-      (evictedOrderIds.length > 0 ? ` (evicted: ${evictedOrderIds.join(',')})` : '')
+    JSON.stringify({
+      message: 'WS emit order',
+      orderId: payload.id,
+      userId: payload.userId,
+      total: payload.total,
+      status: payload.status,
+      activeClients: activeConnectionCount,
+      activeExternalClients: activeExternalConnectionCount,
+      ...(evictedOrderIds.length > 0 ? { evictedOrderId: evictedOrderIds[0] } : {}),
+    })
   );
   broadcast(payload, evictedOrderIds);
 };
@@ -202,7 +212,7 @@ const scheduleNextGeneratedOrder = () => {
 // - third order within the burst window → triggers the critical burst toast
 //
 // Still connection-TRIGGERED, unlike the unconditional recurring generator
-// above: Railway's process starts long before any real visitor connects, so
+// above: Railway's process starts long before any client connects, so
 // firing at process start would finish before anyone could see it. But once
 // triggered, the timers are module-scope — not owned by or cancelled with the
 // triggering connection — so they keep running even if that connection closes
@@ -233,20 +243,35 @@ const scheduleStartupBurstOnce = () => {
   }, 2500);
 };
 
-// Deliberately a counter this module owns and updates itself in the
+// Deliberately counters this module owns and updates itself in the
 // connection/close handlers below, rather than reading wss.clients.size at
-// those two call sites: wss.clients is populated by the ws library as part
-// of its real WebSocket handshake (completeUpgrade), which unit tests that
+// those call sites: wss.clients is populated by the ws library as part of
+// its real WebSocket handshake (completeUpgrade), which unit tests that
 // drive wss.emit('connection', ...) directly (bypassing a real handshake)
-// never go through — this counter stays accurate under that test style, and
-// is exactly equivalent to wss.clients.size for any real connection.
+// never go through — these counters stay accurate under that test style, and
+// activeConnectionCount is exactly equivalent to wss.clients.size for any
+// real connection.
+//
+// activeExternalConnectionCount is the same idea, scoped to connections NOT
+// classified as the owner/test browser (isExcludedClient === false) — purely
+// so generated-order logs (see emit() above) can report "was a client not
+// carrying the owner/test token connected when this order was generated",
+// without this count ever feeding back into whether an order is generated
+// at all.
 let activeConnectionCount = 0;
+let activeExternalConnectionCount = 0;
 
 const attachConnectionHandler = () => {
   wss.on('connection', (socket, request) => {
+    // Classified exactly once, at connection time, from the token this
+    // socket connected with — never re-read or re-compared for the rest of
+    // this socket's lifetime (including at disconnect below).
+    const viewerToken = extractViewerToken(request);
+    const isExcludedClient = isViewerTokenExcluded(viewerToken, DEMO_LOG_EXCLUDED_TOKEN);
+
     activeConnectionCount += 1;
-    const clientIp = extractClientIp(request);
-    logConnectionEvent('WS client connected', activeConnectionCount, clientIp);
+    if (!isExcludedClient) activeExternalConnectionCount += 1;
+    logConnectionEvent('WS client connected', activeConnectionCount, isExcludedClient);
 
     // A fresh viewing session (the count just went 0 -> 1) gets its own
     // demo burst; a second tab/client joining an already-active session
@@ -258,10 +283,22 @@ const attachConnectionHandler = () => {
     // Keep the Railway proxy from timing out idle client→server direction
     const pingInterval = setInterval(() => socket.ping(), 30_000);
 
+    // Math.max(0, count - 1) alone only stops the counters from going
+    // negative — it does NOT make a socket's own contribution idempotent: if
+    // 'close' fired twice for the same socket, the second decrement would
+    // still silently steal a count point that rightfully belongs to some
+    // OTHER, still-connected socket. This guard ensures each socket
+    // decrements both counters exactly once, mirroring the exactly-one
+    // increment above — "one connection contributes +1 exactly once and -1
+    // exactly once" holds regardless of how many times 'close' fires.
+    let hasClosed = false;
     socket.on('close', () => {
+      if (hasClosed) return;
+      hasClosed = true;
       clearInterval(pingInterval);
       activeConnectionCount = Math.max(0, activeConnectionCount - 1);
-      logConnectionEvent('WS client disconnected', activeConnectionCount, clientIp);
+      if (!isExcludedClient) activeExternalConnectionCount = Math.max(0, activeExternalConnectionCount - 1);
+      logConnectionEvent('WS client disconnected', activeConnectionCount, isExcludedClient);
       // Deliberately no isBurstInFlight reset here — see the comment above
       // scheduleStartupBurstOnce. Disconnecting (even back to zero viewers)
       // must not, by itself, free up a new burst while one is still running.
