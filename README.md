@@ -124,7 +124,7 @@ portal-shell (vanilla JS)
 
 ## 🤖 Agentic AI Development
 
-This repository is itself built with a deliberately **agentic** workflow, not AI-assisted autocomplete. I set the core frontend architecture — domain boundaries, the shared cross-framework contracts, per-framework isolation rules, and the initial engineering direction — and keep it encoded durably in `CLAUDE.md`, Nx module-boundary tags, generators, and automated review tooling, rather than only in my own head or in one-off PR comments. Within those guardrails, implementation itself is increasingly delegated to AI agents, primarily **Claude Code**: day to day I work more at the level of feature intent, system behavior, constraints, and review direction than by writing or personally reviewing every line.
+This repository evolved from close collaboration with **Claude Code** into a deliberately **agentic development workflow**. I drove the core architecture and engineering guardrails early on, and I continue to own feature intent, architectural decisions, constraints, and review direction while increasingly delegating implementation details to Claude Code and automated agents. Those guardrails are encoded in `CLAUDE.md`, Nx boundaries, generators, and automated review.
 
 | Layer | What it does |
 | :--- | :--- |
@@ -136,9 +136,9 @@ This repository is itself built with a deliberately **agentic** workflow, not AI
 
 > The open question this repository is exploring: **how far can implementation be delegated to autonomous agents while still preserving architectural consistency, maintainability, and technical quality?**
 
-Architectural control and the engineering guardrails above stay human-directed; implementation execution is increasingly delegated to agents operating inside them. That's distinct from the [LLM Business Agent](docs/business-agent.md) described earlier — the Business Agent is a Claude-powered *feature* the apps expose to end users, while this section is about how the repository itself gets built.
+Architecture and engineering guardrails remain human-directed; implementation increasingly runs through agents operating within them. This is separate from the [LLM Business Agent](docs/business-agent.md), which is an end-user product feature rather than part of the development workflow.
 
-→ Full breakdown — slash command examples, the agent's tool loop, generator internals, PR review agent design: **[docs/agentic-workflow.md](docs/agentic-workflow.md)**
+→ Full workflow details: **[docs/agentic-workflow.md](docs/agentic-workflow.md)**
 
 ## 🧠 Design Patterns
 
@@ -164,7 +164,7 @@ The facade draws a hard line between **Business Logic** (fetch/cache/derive/muta
                     │   Dumb Components (many)  │
                     │  props in → renders out   │
                     │  OnPush / React.memo      │
-                    └──────────────────────────┘
+                    └───────────────────────────┘
 ```
 
 | Without facade | With facade |
@@ -248,7 +248,7 @@ npm run validate   # lint + test everything, all frameworks
 ## 🛠 Available Commands
 
 | Command | Scope | Description |
-| :--- | :--- | :--- |
+| :--- | :--- |
 | `npm run start:angular` / `start:shell` | — | Serve each app (`:4200` / `:4000`) |
 | `npm run start:react` | React | Serves the app (`:4201`) **and** the WS mock + local Business Agent server together, via `concurrently` |
 | `npm run mock:ws` | Both | WS mock server at `ws://localhost:3000/orders` — only needed standalone for Angular |
