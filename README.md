@@ -248,7 +248,7 @@ npm run validate   # lint + test everything, all frameworks
 ## 🛠 Available Commands
 
 | Command | Scope | Description |
-| :--- | :--- |
+| :--- | :--- | :--- |
 | `npm run start:angular` / `start:shell` | — | Serve each app (`:4200` / `:4000`) |
 | `npm run start:react` | React | Serves the app (`:4201`) **and** the WS mock + local Business Agent server together, via `concurrently` |
 | `npm run mock:ws` | Both | WS mock server at `ws://localhost:3000/orders` — only needed standalone for Angular |
