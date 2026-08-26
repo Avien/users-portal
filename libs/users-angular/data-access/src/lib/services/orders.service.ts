@@ -1,7 +1,13 @@
 import { inject, Injectable, InjectionToken } from '@angular/core';
 import { filter, Observable, map } from 'rxjs';
 import { webSocket } from 'rxjs/webSocket';
-import { Order, OrderStreamEvent, DEFAULT_ORDERS_WS_URL, DEFAULT_ORDERS_API_URL } from '@portal/users/utils';
+import {
+  Order,
+  OrderStreamEvent,
+  DEFAULT_ORDERS_WS_URL,
+  DEFAULT_ORDERS_API_URL,
+  buildOrdersSocketUrl,
+} from '@portal/users/utils';
 
 export interface OrderStreamUpdate {
   order: Order;
@@ -24,7 +30,7 @@ export const ORDERS_API_URL = new InjectionToken<string>('ORDERS_API_URL', {
 @Injectable({ providedIn: 'root' })
 export class OrdersService {
   private readonly url = inject(ORDERS_SOCKET_URL);
-  private stream$ = webSocket<OrderStreamEvent>(this.url);
+  private stream$ = webSocket<OrderStreamEvent>(buildOrdersSocketUrl(this.url));
 
   public ordersUpdates$: Observable<OrderStreamUpdate> = this.stream$.pipe(
     filter((event: OrderStreamEvent) => event.type === 'order-update'),

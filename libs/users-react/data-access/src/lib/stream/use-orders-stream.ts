@@ -6,6 +6,7 @@ import {
   reduceOrderMonitoring,
   ORDER_BURST_WINDOW_MS,
   DEFAULT_ORDERS_WS_URL,
+  buildOrdersSocketUrl,
 } from '@portal/users/utils';
 import { useUsersStore } from '../store/users.store';
 
@@ -45,7 +46,7 @@ export function useOrdersStream(): void {
   const streamedOrdersRef = useRef<Order[]>([]);
 
   useEffect(() => {
-    const ws = new WebSocket(ORDERS_SOCKET_URL);
+    const ws = new WebSocket(buildOrdersSocketUrl(ORDERS_SOCKET_URL));
 
     ws.onmessage = (event: MessageEvent) => {
       let parsed: OrderStreamEvent;

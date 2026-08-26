@@ -86,6 +86,15 @@ describe('useOrdersStream', () => {
     expect(MockWebSocket.latest().url).toBe(expectedUrl);
   });
 
+  it('appends the demo-owner viewerToken to the WebSocket URL when set in localStorage', () => {
+    localStorage.setItem('usersPortalDemoOwnerToken', 'owner-abc');
+    const { wrapper } = makeWrapper();
+    renderHook(() => useOrdersStream(), { wrapper });
+
+    expect(MockWebSocket.latest().url).toContain('viewerToken=owner-abc');
+    localStorage.clear();
+  });
+
   it('closes the WebSocket on unmount', () => {
     const { wrapper } = makeWrapper();
     const { unmount } = renderHook(() => useOrdersStream(), { wrapper });
