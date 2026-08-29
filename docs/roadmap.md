@@ -75,16 +75,23 @@ being polished" work.
 
 ### Live WebSocket order visual feedback
 
-- Subtle, temporary glow/pulse (~2-3s) on a newly WS-inserted order row for
-  the currently selected user, fading back to normal; HTTP hydration never
-  triggers it
-- A small "+1" (incrementing) badge on another user's (unselected) tab when
-  an order arrives for them while that tab isn't the active selection;
-  clears when that tab is selected
-- Ephemeral **presentation** state only, owned per-framework (Angular
-  facade signals, React Zustand store, Vue Pinia store) — explicitly not a
-  field added to the `Order` domain model or any shared contract in
-  `@portal/users/utils`
+Done — a subtle, temporary lemon-yellow pulse (~2.5s, static highlight under
+`prefers-reduced-motion`) on a newly WS-inserted order row for the currently
+selected user, fading back to normal; HTTP hydration never triggers it. A
+small "+N" (incrementing) badge appears on another user's (unselected) tab
+when an order arrives for them while that tab isn't the active selection,
+and clears when that tab is selected. All ephemeral **presentation** state
+only, owned per-framework (Angular facade signals, React Zustand store, Vue
+Pinia store) — not a field on the `Order` domain model or any shared
+contract in `@portal/users/utils`.
+
+Also shipped alongside it: **smart live-follow** for the virtualized Orders
+list (auto-scrolls while near the bottom, pauses with a "+N new orders ↓"
+indicator when the user scrolls up, and resumes on click or when returning
+to the bottom) and a **stable Orders viewport height** across loading,
+user-switching, and empty states. An Angular production-only animation
+scoping issue was also fixed so the row highlight behaves consistently in
+dev and production.
 
 ### Business Agent semantics clarity
 
@@ -117,18 +124,39 @@ of the live demo. What's still open: cross-check the same claims read
 consistently in the README and any other deep-dive doc that touches
 Orders/retention, rather than living correctly in only one place.
 
-### Portfolio / reviewer README polish
+### Portfolio / reviewer / AI-scan readiness
 
-- A "For reviewers — start here" quick-tour section near the top of the README
-- A claim-to-code/test evidence table (each README claim linked to the
-  file/test that backs it)
+Two audiences, one set of changes: everything below should make the repo
+easier for a human reviewer to skim *and* for an automated/LLM-based GitHub
+scanner to understand accurately — never keyword stuffing, never an
+AI-facing claim that doesn't trace back to real code, tests, or docs.
+
+- A "For reviewers — start here" quick-tour section near the top of the
+  README — the same concise entry path for a human skimming and a scanner
+  looking for where to begin
+- An explicit architecture/skills evidence mapping — claim → implementation
+  → test/doc — for each notable README claim, not just prose asserting it
 - CI/status badges (build, the validate jobs, the architecture-review gate)
 - A short "architecture decisions & trade-offs" summary (linking to existing
   deep-dive docs rather than duplicating them)
 - An explicit "intentional limitations" list (demo-scale retention, no
   persistence, no auth yet, etc.)
-- Appropriate GitHub repo topics (e.g. `nx-monorepo`, `angular`, `react`,
-  `vue`, `microfrontends`, `claude-api`, `llm-tool-use`)
+- Important stack/architecture terminology (Nx boundaries, Module
+  Federation, the facade pattern, canonical store, etc.) present as
+  real README/doc text, not only inside diagrams — a scanner that can't
+  parse an ASCII diagram should still find the concept named in prose
+- Consistent terminology for the same concept across the README and every
+  deep-dive doc, rather than a different name per document
+- Self-contained summaries at the top of each deep-dive doc, so semantic/
+  code search can retrieve the right doc from a partial or paraphrased query
+  without needing the whole file as context
+- Appropriate GitHub repo topics for the major technologies *and*
+  architecture concepts (e.g. `nx-monorepo`, `angular`, `react`, `vue`,
+  `microfrontends`, `claude-api`, `llm-tool-use`)
+- Evaluate whether a small, generic `AGENTS.md` adds anything beyond what
+  `CLAUDE.md` already provides — add one only if it serves a genuinely
+  different audience/tool, not merely to duplicate the same guidance under a
+  second filename
 
 ### Operational polish
 
