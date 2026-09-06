@@ -1,18 +1,8 @@
 
 # 👥 Users Portal
 
-This repository explores how the same frontend domain can evolve across:
+This Nx monorepo explores the same users-and-orders domain across Angular, React, and Vue, using framework-native architectures behind shared contracts rather than direct framework translation. It also demonstrates an Angular-host/React-remote Hybrid MFE, one canonical real-time Orders backend, a Claude-powered Business Agent, and an increasingly agentic development workflow.
 
-- Angular standalone reference architecture
-- Idiomatic React and Vue standalone architectures
-- Shared framework-agnostic domain contracts with Nx-enforced boundaries
-- Real-time WebSocket updates over one canonical Orders backend
-- Hybrid Angular-host / React-remote Microfrontend composition with Module Federation 2.0
-- Product-facing LLM Business Agent with Claude API tool calling and multi-turn context
-- Agentic AI workflows for cross-framework architecture, implementation, and automated review
-
-> The goal is not direct framework translation, but understanding how the same architectural responsibilities map differently across rendering and state paradigms.
-> 
 **🚀 Live Demo**
 
 <a href="https://users-portal-shell.vercel.app">
@@ -61,7 +51,7 @@ A concise entry point for a Staff/Principal-level reviewer — what this repo de
 
 ## 📦 Project Overview
 
-This Nx monorepo contains Angular, React, and Vue standalone implementations of the same users-and-orders domain, plus a Hybrid MFE mode where Angular hosts the React remote through Module Federation 2.0. Each standalone app is deployed independently to Vercel while all three consume the same live canonical Orders backend.
+Each standalone app is deployed independently to Vercel, and all three — plus the Hybrid MFE composition — consume the same live canonical Orders backend:
 
 | App | Stack | Purpose |
 | :--- | :--- | :--- |
@@ -81,7 +71,7 @@ The UI lists users and their orders. Selecting a user loads orders lazily with p
 
 **Try it locally:**
 ```bash
-npm run mock:ws && npm run start:react
+npm run start:react
 ```
 A fresh viewing session — a 0→1 transition in connected WebSocket clients — starts a short 3-order demo burst when no previous burst is still in flight: the first establishes the monitoring baseline, the second triggers a high-value warning, and the third triggers a critical burst notification. Recurring order generation runs on one process-level scheduler and only emits while at least one client is connected — at zero clients the timer keeps ticking but each tick is a no-op (no order allocated, no store mutation). Additional clients joining an already-active session don't trigger another burst, and a burst already in progress is allowed to finish even if its triggering client disconnects — which is also what keeps a rapid disconnect/reconnect from starting a second, overlapping burst.
 
@@ -156,7 +146,7 @@ This repository evolved from close collaboration with **Claude Code** into a del
 
 | Layer | What it does |
 | :--- | :--- |
-| **`CLAUDE.md`** | The architectural source of truth — module boundaries, naming, layering, framework-isolation rules — read verbatim by Claude Code, the autonomous agent, and the PR review bot, so every agent works against the same rules instead of an implicit "house style" |
+| **`CLAUDE.md`** | The architectural source of truth — module boundaries, naming, layering, framework-isolation rules. Claude Code consumes it as repository-level instructions/context, while the autonomous agent and PR review bot load it verbatim into their own system prompts — so all three work against the same architectural rules instead of an implicit "house style" |
 | **Slash commands** (`.claude/commands/`) | `/new-component`, `/sync-contract`, `/architecture-check` — explicit, scoped prompts for common changes, each one encoding the project's own conventions so the output doesn't depend on restating them every time |
 | **Nx generator** (`feature-domain`) | `npm run g:feature-domain -- <name>` scaffolds a full dual-framework feature domain (35 files, both facades, path aliases) in one command — boundaries a human would otherwise have to remember are structural instead |
 | **Autonomous agent** (`tools/agent.mjs`) | A hand-rolled Claude API tool-use loop — describe a goal in natural language, it scaffolds, edits, and validates across both frameworks unattended, with a confirmation gate before mutating actions |
@@ -207,7 +197,7 @@ The facade draws a hard line between **Business Logic** (fetch/cache/derive/muta
 
 | Without facade | With facade |
 | :--- | :--- |
-| Components import NgRx actions / Zustand or Pinia stores directly | Components import nothing — only props |
+| Components import NgRx actions / Zustand or Pinia stores directly | Presentational components consume inputs/props and callbacks, not state-management APIs |
 | Swapping state libraries touches every component | Swap facade internals, components unchanged |
 | Testing requires mocking the whole state tree | Test with plain prop objects |
 | Business rules scattered across templates | BL lives in one place, independently testable |
