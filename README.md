@@ -21,26 +21,13 @@ This Nx monorepo explores the same users-and-orders domain across Angular, React
   <img src="https://img.shields.io/badge/-Vue-4FC08D?style=for-the-badge&logo=vue.js&logoColor=white" />
 </a>
 
+## 🧭 Architecture Highlights
 
-## 🧭 For Reviewers — Start Here
-
-Quick tour:
-
-1. [Architecture at a Glance](#-architecture-at-a-glance) — the same VM/interactions contract, three framework-native implementations
-2. [Canonical Orders Store](#-canonical-orders-store) + [LLM-Powered Business Agent](docs/business-agent.md) — a real Claude tool-calling loop over live state, not a chatbot wrapper
-3. [Hybrid Microfrontend Architecture](docs/mfe-architecture.md) — Module Federation 2.0, a framework-agnostic `mount()` contract, zero React imports in the host
-4. [Agentic AI Development](docs/agentic-workflow.md) — how this repo itself is built: guardrails encoded in `CLAUDE.md` and enforced by tooling ([`eslint.config.mjs`](eslint.config.mjs)'s tag rules, generators, slash commands, an automated PR reviewer), not just stated as convention
-
-| Claim | Implementation | Evidence |
-| :--- | :--- | :--- |
-| Same VM/interactions contract, 3 framework-native facades | [`users-facade.interactions.ts`](libs/users/src/lib/models/users-facade.interactions.ts), [`user-orders.vm.ts`](libs/users/src/lib/models/user-orders.vm.ts) | [Architecture at a Glance](#-architecture-at-a-glance) |
-| Module boundaries enforced by tooling, not convention | [`eslint.config.mjs`](eslint.config.mjs) | [`CLAUDE.md`](CLAUDE.md) — Module Boundary Tags |
-| Real-time updates share one canonical store | [`tools/mock-orders-ws-server.mjs`](tools/mock-orders-ws-server.mjs) | [docs/business-agent.md § Source-of-truth model](docs/business-agent.md#source-of-truth-model) |
-| Angular host has zero React imports — integrates the remote through a framework-agnostic `mount()` contract | [`react-wrapper.component.ts`](apps/users-portal-angular/src/app/react-wrapper/react-wrapper.component.ts) | [docs/mfe-architecture.md § Angular host](docs/mfe-architecture.md#angular-host--framework-agnostic-wrapper) |
-| Real structured tool calling, not prompt stuffing | [`tools/business-agent-core.ts`](tools/business-agent-core.ts) | [`tools/business-agent-core.spec.ts`](tools/business-agent-core.spec.ts) |
-| Framework-neutral Business Agent UI — one shared Web Component, thin per-framework adapters | [`business-agent-widget.ts`](libs/business-agent-widget/src/lib/business-agent-widget.ts) | [docs/business-agent.md § Cross-framework integration](docs/business-agent.md#cross-framework-integration) |
-| Architecture drift checked automatically on every PR | [`tools/pr-review-agent.mjs`](tools/pr-review-agent.mjs) | [`.github/workflows/pr-review.yml`](.github/workflows/pr-review.yml) |
-| CI validates all 3 frameworks + the agent backend independently | [`package.json`](package.json) `validate:*` scripts | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) |
+- **Three framework-native implementations** — Angular, React, and Vue model the same users-and-orders domain through the shared `UserOrdersVm` / `IUsersFacadeInteractions` contract while keeping framework-native state and rendering patterns. [Architecture at a Glance](#-architecture-at-a-glance)
+- **Hybrid Microfrontend** — Angular hosts an independently deployed React remote through Module Federation 2.0 and a framework-agnostic `mount()` contract, with zero React imports in the host. [Deep dive](docs/mfe-architecture.md)
+- **Canonical real-time Orders state** — HTTP hydration, WebSocket updates, and the Business Agent all derive from the same bounded Orders backend state. [Canonical Orders Store](#-canonical-orders-store)
+- **LLM Business Agent** — a Claude API tool-calling loop over current business data, exposed through one shared Web Component across Angular, React, and Vue. [Deep dive](docs/business-agent.md)
+- **Agentic development workflow** — architecture guardrails live in `CLAUDE.md` and Nx boundaries, with reusable Claude commands, a hand-built autonomous Claude API agent for scoped implementation, and an automated PR review agent for architecture drift. [Deep dive](docs/agentic-workflow.md)
 
 ## 📦 Project Overview
 
