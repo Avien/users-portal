@@ -21,17 +21,10 @@ This Nx monorepo explores the same users-and-orders domain across Angular, React
   <img src="https://img.shields.io/badge/-Vue-4FC08D?style=for-the-badge&logo=vue.js&logoColor=white" />
 </a>
 
-<a href="https://github.com/Avien/users-portal/actions/workflows/ci.yml">
-  <img src="https://github.com/Avien/users-portal/actions/workflows/ci.yml/badge.svg" />
-</a>
-
-<a href="https://github.com/Avien/users-portal/actions/workflows/pr-review.yml">
-  <img src="https://github.com/Avien/users-portal/actions/workflows/pr-review.yml/badge.svg" />
-</a>
 
 ## 🧭 For Reviewers — Start Here
 
-A concise entry point for a Staff/Principal-level reviewer — what this repo demonstrates, and where the evidence actually lives. Quick tour:
+Quick tour:
 
 1. [Architecture at a Glance](#-architecture-at-a-glance) — the same VM/interactions contract, three framework-native implementations
 2. [Canonical Orders Store](#-canonical-orders-store) + [LLM-Powered Business Agent](docs/business-agent.md) — a real Claude tool-calling loop over live state, not a chatbot wrapper
