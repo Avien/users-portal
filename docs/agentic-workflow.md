@@ -2,33 +2,24 @@
 
 [← Back to README](../README.md)
 
-Most of the implementation in this repository was built with **Claude Code**, while architecture, design, and review were led by me throughout:
+This repository is built with a deliberately **agentic** development workflow, not AI-assisted autocomplete — the deep dive behind the README's [Agentic AI Development](../README.md#-agentic-ai-development) section. It evolved from close collaboration with **Claude Code** into that workflow: I set the core architecture and engineering guardrails early on — Nx boundaries, the facade contract, module federation seams, the platform SDK — and continue to own feature intent, architectural decisions, constraints, and review direction, while increasingly delegating implementation details to Claude Code and the automated agents below.
 
-- Architecture decisions (Nx boundaries, the facade contract, module federation seams, the platform SDK) were designed and reviewed by me turn-by-turn; Claude Code implemented against those decisions rather than inventing them from scratch
-- `CLAUDE.md` is the source of truth I maintain for both myself and the AI — it's loaded verbatim as the system prompt everywhere: Claude Code sessions, the autonomous agent, and the PR review bot
-- The React rebuild treats the Angular app as an architectural reference, not a template to translate line-by-line — I directed each pattern's (facade, state management, virtualization) idiomatic reinterpretation per framework, with Claude Code explaining the Angular→React mental-model shifts along the way
-- Every decision — patterns, naming, boundaries, trade-offs — was reviewed and approved by me incrementally, with testing and targeted iteration rather than accepting a single large generation
+- Architecture decisions were designed and directed by me; Claude Code and the automated agents implement against them rather than inventing them from scratch
+- `CLAUDE.md` is the source of truth encoding those decisions — Claude Code consumes it as repository-level instructions/context during a session, while `tools/agent.mjs` and `tools/pr-review-agent.mjs` load it verbatim into their own system prompts, so every path works against the same rules instead of an implicit "house style"
+- The React and Vue rebuilds treat the Angular app as an architectural reference, not a template to translate line-by-line — each pattern's (facade, state management, virtualization) idiomatic reinterpretation per framework was directed by me, with Claude Code explaining the cross-framework mental-model shifts along the way
+- Implementation is increasingly delegated within those guardrails — via slash commands, Claude Code, and the autonomous agent below. The PR review agent is a separate role: it enforces and reviews those same guardrails against every diff, it doesn't implement anything itself
 
 ## Claude Code Slash Commands
 
-The architecture is encoded into reusable Claude Code commands (`.claude/commands/`). These make AI follow the project's conventions automatically rather than reinventing them each time.
-
-You don't need to know which command to run — just describe what you want in plain language and Claude reads `CLAUDE.md` to route you to the right tool:
-
-| You say | Claude runs |
-| :--- | :--- |
-| "add a status badge component to the orders card" | `/new-component` |
-| "add a priority field to the Order type" | `/sync-contract` |
-| "create a full products domain" | `npm run g:feature-domain -- products` |
-| "check for architecture drift before I PR this" | `/architecture-check` |
+The architecture is encoded into reusable Claude Code commands (`.claude/commands/`) — explicit, scoped prompts for common changes, each one encoding the project's own conventions so the output doesn't depend on restating them every time. They're invoked directly (`/new-component`, `/sync-contract`, `/architecture-check`), not inferred automatically from a plain-language request.
 
 | Command | Usage | What it does |
 | :--- | :--- | :--- |
-| `/new-component` | `/new-component <name> <angular\|react>` | Scaffolds a presentational component in the correct lib with all conventions applied (React.memo / OnPush, input signals, layer rules) |
-| `/sync-contract` | `/sync-contract <description>` | Adds a shared type or method to `@portal/users/utils` and propagates it to both the Angular and React facades, then runs both validates |
+| `/new-component` | `/new-component <name> <angular\|react\|vue>` | Scaffolds a presentational component in the correct lib with all conventions applied (React.memo / OnPush / Vue's fine-grained reactivity, input signals, layer rules) |
+| `/sync-contract` | `/sync-contract <description>` | Adds a shared type or method to `@portal/users/utils` and propagates it to the Angular and React facades, then runs both validates |
 | `/architecture-check` | `/architecture-check` | Audits the React codebase for layer boundary violations, cross-framework imports, Zustand scope, JSX logic leaks, and naming convention drift |
 
-> "The tech lead's job is to make AI follow the architecture, not invent a new one every time."
+Current per-command scope: `/new-component` covers Angular, React, and Vue; `/sync-contract` covers Angular and React only; `/architecture-check` audits the React codebase only. None of the three has a Vue-and-Angular-aware drift check yet.
 
 ## Autonomous Agent — `tools/agent.mjs`
 
@@ -51,9 +42,7 @@ ANTHROPIC_API_KEY=sk-... npm run agent -- "create a products domain with name an
 | `write_file` / `edit_file` | Fills in the model interface, mock data, and interaction methods in **both** facades |
 | `run_validation` | Runs `validate:angular` / `validate:react` and fixes anything that fails before finishing |
 
-Built on `claude-opus-4-8` with adaptive thinking; file operations are confined to the repo root, and mutating tools require confirmation unless `--yes` is passed. The point isn't to replace Claude Code — it's to show the tool-use loop from the inside: schema design, the agentic loop, approval gating, and using the project's own architecture as the agent's knowledge base.
-
-> "The tech lead's job is to make AI follow the architecture, not invent a new one every time — whether that AI is a pair-programmer or an autonomous loop you built yourself."
+Built on `claude-opus-4-8` with adaptive thinking; file operations are confined to the repo root, and mutating tools require confirmation unless `--yes` is passed. The point isn't to replace Claude Code — it's to show the tool-use loop from the inside: schema design, the agentic loop, approval gating, and using the project's own architecture as the agent's knowledge base. Angular + React only — it doesn't scaffold Vue.
 
 ## PR Review Agent — `tools/pr-review-agent.mjs`
 
@@ -79,7 +68,7 @@ npm run pr-review -- --base origin/main
 
 It's explicitly instructed to stay **low-noise** — no formatting nitpicks, no subjective style opinions, no hypotheticals, only what it's genuinely confident is real drift introduced by that diff. Output is forced into a fixed shape: one verdict line (`✅ No architecture drift found.` or `⚠️ N issue(s) found:`) followed by `path:line` bullets — and that verdict line is exactly what the exit-code check parses to decide pass/fail (see below).
 
-- Wired into `.github/workflows/pr-review.yml`: runs on every PR to `main`, posts the review as a PR comment via `gh pr comment`, and **fails the job when the rubric's own verdict line signals drift** (`process.exit(1)` on a `⚠️` verdict) — a script/API failure now also fails the job, on the theory that "couldn't verify" shouldn't silently pass. To make this an actual merge gate rather than just a red/green badge, add "Architecture review" as a **required status check** in the `main` branch protection rule (GitHub Settings → Branches) — without that rule the job still runs and reports status, but nothing stops a PR from merging around it.
+- Wired into `.github/workflows/pr-review.yml`: runs on every PR to `main`, posts the review as a PR comment via `gh pr comment`, and **fails the job when the rubric's own verdict line signals drift** (`process.exit(1)` on a `⚠️` verdict) — a script/API failure now also fails the job, on the theory that "couldn't verify" shouldn't silently pass. **Architecture review** is configured as a required status check in the `main` branch protection rule, so a PR with confirmed drift can't be merged around it.
 - Verified locally against two synthetic diffs before shipping: one with real violations (a `ui` component importing a Zustand store, business logic in JSX, a redefined domain type) — correctly flagged all three — and one clean contract-only change — correctly stayed silent.
 
 ## Nx Generator — `feature-domain`

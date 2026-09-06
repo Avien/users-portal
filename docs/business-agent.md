@@ -187,15 +187,15 @@ to (see below), never a full lifetime order history. Concretely:
 - A question like "what was this user's *first* order ever?" cannot be
   answered **reliably** once that user has exceeded the retention cap: the
   tools expose only the current retained dataset, and there is no
-  archive/history store for the agent (or anything else) to consult instead.
-  That's an architectural guarantee. What the agent actually *says* in that
-  case is a separate, model-behavior question this architecture doesn't
-  currently constrain — the system prompt/tool contract doesn't tell Claude
-  that older evicted orders once existed, so it isn't guaranteed to
-  volunteer that limitation unprompted rather than answering from only what
-  the tools returned. Making that explicit at the prompt/tool-contract level
-  is tracked as an open item under Post-production / Portfolio Polish (see
-  [docs/roadmap.md](./roadmap.md#business-agent-semantics-clarity)).
+  archive/history store for the agent (or anything else) to consult instead —
+  an architectural guarantee. The agent's system prompt (`SYSTEM_PROMPT` in
+  `tools/business-agent-core.ts`) makes this explicit to the model too: it
+  states the snapshot is **not** lifetime-complete, that older orders are
+  evicted and unavailable with no historical archive to fall back to, and
+  instructs Claude not to answer a lifetime-history question ("first order
+  ever," "all historical orders," "lifetime spend," etc.) as if the retained
+  window were the complete record — it should say plainly that only the
+  current retained window (up to 30 recent orders per user) is available.
 - This is a direct consequence of the demo-scale retention trade-off below,
   not a separate limitation of the agent itself — every reader of the
   canonical store (UI, WS stream, agent) is bounded the same way.

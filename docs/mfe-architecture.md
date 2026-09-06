@@ -2,6 +2,8 @@
 
 [← Back to README](../README.md)
 
+This is the deep dive on the Hybrid Microfrontend composition — the fourth deployment mode alongside the three standalone Angular/React/Vue apps, where the Angular app hosts the React app at runtime as a remote. It covers the `mount()` contract, the shared `@portal/platform` SDK, and the Module Federation setup that makes it work in both dev and production.
+
 The Hybrid mode runs React inside Angular using **Module Federation 2.0** — no iframes, no build-time coupling, independent deployments.
 
 ```
