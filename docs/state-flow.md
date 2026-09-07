@@ -2,6 +2,8 @@
 
 [← Back to README](../README.md)
 
+Angular, React, and Vue implement the same semantic VM/interactions contract defined by `UserOrdersVm` and `IUsersFacadeInteractions`, exposed idiomatically per framework. This doc walks through each framework's facade internals and diagrams how a user interaction and a WebSocket event each flow through it, end to end.
+
 ## Framework implementations of the Facade pattern
 
 **Angular — `UsersFacade` (class, root-scoped DI)**
@@ -21,13 +23,22 @@ Same role, idiomatic React form: composes TanStack Query + Zustand and returns `
 * `useMemo` inside the facade replaces NgRx memoised selectors
 * `React.memo` on UI components replaces `OnPush`
 
-**Shared contract** — both facades return the same shape, enforced by `@portal/users/utils`:
+**Vue — `useUsersFacade()` (composable, component-scoped)**
+
+Same role again, idiomatic Vue form: composes TanStack Vue Query + Pinia and returns a `ComputedRef` per `UserOrdersVm` field plus the plain `IUsersFacadeInteractions` methods. Components read refs, never the underlying query or store directly.
+
+* URL (`vue-router`'s `useRoute()`) is the source of truth for `selectedUserId` — the same pattern as React's `useParams`, no Pinia state for selection
+* `useRouter().push()` is the write path for `selectUser` — navigation IS the state update, the same shape as React's `useNavigate`
+* `computed()` inside the facade replaces NgRx memoised selectors / React's `useMemo`
+* Vue's fine-grained reactivity tracks each `computed()` ref directly — no `OnPush`/`React.memo` equivalent needed
+
+**Shared contract** — all three facades implement the same semantic `UserOrdersVm & IUsersFacadeInteractions` contract, exposed idiomatically per framework (Vue wraps each VM field as a `ComputedRef`, Angular emits one aggregate Signal, React returns plain values — interaction methods are plain functions in all three), enforced by `@portal/users/utils`:
 ```ts
 UserOrdersVm & IUsersFacadeInteractions
 // selectUser(id), dismissOrderNotification(id) — identical public surface
 ```
 
-Swapping the entire state management stack (Angular NgRx ↔ React TanStack+Zustand) had zero impact on the presentational components — they consume the same contract either way.
+In each framework, the presentational layer is insulated from the state-management implementation and consumes only facade-derived data and callbacks — three parallel implementations (Angular NgRx, React TanStack+Zustand, Vue TanStack Vue Query+Pinia), not one set of components surviving a literal state-library swap.
 
 ---
 
@@ -109,4 +120,43 @@ useUsersFacade reads notifications from store
 vm.notifications → ToastStack
 ```
 
-> The domain-driven library structure, layer rules, and framework isolation tags now live directly in the main [README](../README.md#-domain-driven-library-structure).
+---
+
+## State Flow — Vue
+
+```text
+User Interaction
+  ↓
+UI Component (template — props only)
+  ↓
+selectUser() callback
+  ↓
+useRouter().push() → URL update (/users/:id)
+  ↓
+useRoute() re-reads selectedUserId
+  ↓
+useQuery (TanStack Vue Query) fetches orders for id
+  ↓
+computed() (facade) derives UserOrdersVm
+  ↓
+UI Rendering
+```
+
+WebSocket path (singleton, runs once at the app root):
+```text
+useOrdersStream() — mounted once in <App>
+  ↓
+WebSocket message
+  ↓
+queryClient.setQueryData → per-user cache updated
+  ↓ (if user not yet visited → pendingByUser buffer)
+reduceOrderMonitoring (shared pure util)
+  ↓
+Pinia addNotification
+  ↓
+useUsersFacade reads notifications from store
+  ↓
+vm.notifications → ToastStack
+```
+
+> The domain-driven library structure, layer rules, and framework isolation tags now live directly in the main [README](../README.md#domain-driven-library-structure).
