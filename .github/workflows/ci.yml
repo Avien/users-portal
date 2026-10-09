@@ -79,6 +79,25 @@ jobs:
 
       - run: npm run validate:vue
 
+  validate-agent-tooling:
+    name: Validate Agent Tooling
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Check autonomous agent syntax
+        run: node --check tools/agent.mjs
+
+      - name: Smoke-test repository Skill discovery
+        run: node tools/agent.mjs --list-skills | grep -q 'new-component'
+
   validate-business-agent:
     name: Validate Business Agent
     runs-on: ubuntu-latest
