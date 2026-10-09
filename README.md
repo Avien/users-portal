@@ -122,7 +122,7 @@ portal-shell (vanilla JS)
 
 ## 🤖 Agentic AI Development
 
-This repository evolved from close collaboration with **Claude Code** into a deliberately **agentic development workflow**. I drove the core architecture and engineering guardrails early on, and I continue to own feature intent, architectural decisions, constraints, and review direction while increasingly delegating implementation details to Claude Code and automated agents. Those guardrails are encoded in `CLAUDE.md`, Nx boundaries, generators, and automated review.
+This repository evolved from close collaboration with **Claude Code** into a deliberately **agentic development workflow**. I drove the core architecture and engineering guardrails early on, and I continue to own feature intent, architectural decisions, constraints, and review direction while increasingly delegating implementation details to Claude Code and automated agents. Those guardrails are encoded in `CLAUDE.md`, Nx boundaries, generators, repository Skills, and automated review.
 
 | Layer | What it does |
 | :--- | :--- |
