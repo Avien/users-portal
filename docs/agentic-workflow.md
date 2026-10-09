@@ -29,6 +29,9 @@ Current scope: the `new-component` Skill covers Angular, React, and Vue; `/sync-
 This is a standalone agent built directly on the **Claude API** — a hand-rolled tool-use loop, not a wrapper around Claude Code. It loads `CLAUDE.md`, scans `.claude/skills/*/SKILL.md` at startup, exposes the discovered Skill catalog to the model, and provides a `load_skill` tool so the full procedure is loaded only when a goal matches it. The existing generator-driven new-domain workflow remains available for brand-new domains.
 
 ```bash
+# smoke test — proves the standalone agent discovers repo Skills without calling the API
+npm run agent -- --list-skills
+
 # autonomous — runs the full trajectory unattended
 ANTHROPIC_API_KEY=sk-... npm run agent -- "create a products domain with name, price, category and a selectProduct interaction" --yes
 
@@ -39,7 +42,7 @@ ANTHROPIC_API_KEY=sk-... npm run agent -- "create an Angular user-badge componen
 ANTHROPIC_API_KEY=sk-... npm run agent -- "create a products domain with name and price"
 ```
 
-**How it works** — the same `CLAUDE.md` that governs Claude Code in this repo is loaded *verbatim* as the agent's system prompt, with a thin operating layer on top. The agent then reasons over that and drives the loop itself: `model → tool → result → model`, until the domain is scaffolded, wired in both frameworks, and validation passes.
+**How it works** — the same `CLAUDE.md` that governs Claude Code in this repo is loaded *verbatim* as the agent's system prompt, with a thin operating layer and the discovered Skill catalog on top. When a goal matches a Skill, the model first calls `load_skill`, then drives `model → tool → result → model` until that procedure is complete and validation passes. New-domain requests continue through the generator workflow.
 
 | Tool | What the agent does with it |
 | :--- | :--- |
