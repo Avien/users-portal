@@ -1,20 +1,20 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, statSync, readdirSync, mkdirSync } from 'node:fs';
 import { resolve, relative, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// A from-scratch Claude agent that scaffolds and fills in a new dual-framework
-// feature domain in this Nx monorepo. It exposes this repo's own operations as
-// tools (the feature-domain generator, file edits, the validate scripts) and
-// drives them with a manual agentic loop — model → tool → result → model —
-// so every step is visible and mutating actions can be gated.
+// A from-scratch Claude coding agent for this Nx monorepo. It loads the repo's
+// architecture rules, discovers repository-owned Skills, exposes constrained
+// file/generator/validation tools, and drives them with a manual agentic loop:
+// model → tool → result → model. Every mutating step can be approval-gated.
 //
 //   ANTHROPIC_API_KEY=... node tools/agent.mjs "add a products domain with
 //     id/name/price and a selectProduct interaction"
+//   ANTHROPIC_API_KEY=... node tools/agent.mjs "create an Angular user-badge component"
 //
 // Flags:
 //   --yes   skip the confirmation prompt before mutating tools (scaffold/write/edit)
@@ -86,7 +86,68 @@ const runShell = (command, commandArgs) => {
   return `exit code: ${res.status}\n${tail || '(no output)'}`;
 };
 
+const parseSkillFrontmatter = (content) => {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+  if (!match) return {};
+  const metadata = {};
+  for (const rawLine of match[1].split(/\r?\n/)) {
+    const colon = rawLine.indexOf(':');
+    if (colon === -1) continue;
+    const key = rawLine.slice(0, colon).trim();
+    let value = rawLine.slice(colon + 1).trim();
+    value = value.replace(/^(["'])(.*)\1$/, '$2');
+    if (key) metadata[key] = value;
+  }
+  return metadata;
+};
+
+const discoverSkills = () => {
+  const skillsRoot = resolve(REPO_ROOT, '.claude', 'skills');
+  if (!existsSync(skillsRoot)) return [];
+
+  return readdirSync(skillsRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => {
+      const skillPath = resolve(skillsRoot, entry.name, 'SKILL.md');
+      if (!existsSync(skillPath)) return null;
+      const content = readFileSync(skillPath, 'utf8');
+      const metadata = parseSkillFrontmatter(content);
+      return {
+        name: metadata.name || entry.name,
+        description: metadata.description || '',
+        path: relative(REPO_ROOT, skillPath),
+      };
+    })
+    .filter(Boolean);
+};
+
+const repoSkills = discoverSkills();
+
 const tools = {
+  load_skill: {
+    mutating: false,
+    definition: {
+      name: 'load_skill',
+      description:
+        'Load the full instructions for one repository-owned Skill discovered under .claude/skills. ' +
+        'Call this before making changes when the user goal matches a listed Skill.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Skill name from the available repository Skills catalog.' },
+        },
+        required: ['name'],
+      },
+    },
+    run: ({ name }) => {
+      const skill = repoSkills.find((candidate) => candidate.name === name);
+      if (!skill) {
+        return `Unknown skill: ${name}. Available: ${repoSkills.map((candidate) => candidate.name).join(', ') || '(none)'}`;
+      }
+      return readFileSync(safeResolve(skill.path), 'utf8');
+    },
+  },
+
   scaffold_domain: {
     mutating: true,
     definition: {
@@ -161,6 +222,7 @@ const tools = {
     },
     run: ({ path, content }) => {
       const abs = safeResolve(path);
+      mkdirSync(dirname(abs), { recursive: true });
       writeFileSync(abs, content, 'utf8');
       return `Wrote ${content.length} bytes to ${path}`;
     },
@@ -200,13 +262,12 @@ const tools = {
     definition: {
       name: 'run_validation',
       description:
-        'Run the project validation (lint + tests, plus tsc for React). ' +
-        'Run this after editing to confirm both implementations still pass. ' +
-        '"both" runs angular then react.',
+        'Run the project validation for Angular, React, Vue, or the legacy Angular+React pair. ' +
+        'Use the framework required by the task or loaded Skill; "both" runs angular then react.',
       input_schema: {
         type: 'object',
         properties: {
-          framework: { type: 'string', enum: ['angular', 'react', 'both'] },
+          framework: { type: 'string', enum: ['angular', 'react', 'vue', 'both'] },
         },
         required: ['framework'],
       },
@@ -228,38 +289,47 @@ const claudeMd = (() => {
   return existsSync(p) ? readFileSync(p, 'utf8') : '';
 })();
 
+const skillCatalog = repoSkills.length
+  ? repoSkills
+      .map((skill) => `- ${skill.name}: ${skill.description || '(no description)'} [${skill.path}]`)
+      .join('\n')
+  : '(no repository Skills discovered)';
+
 const OPERATING_INSTRUCTIONS = `You are an autonomous coding agent operating inside this Nx monorepo
 via a tool-use loop. The project rules above (from CLAUDE.md) are authoritative — follow them.
-Your job is to scaffold and fully wire up a NEW feature domain end to end, given a
-natural-language goal. You have no terminal — only the provided tools.
+You have no terminal — only the provided tools.
 
-Workflow for a new domain:
-1. Call scaffold_domain with a kebab-case name to generate all four libs and the path aliases.
-2. Use list_files / read_file to see what the generator produced (placeholder model interface,
-   MOCK_<NAME> data, the I<Name>FacadeInteractions contract, and both facades).
-3. Fill in the real shape:
-   - The shared model interface in libs/<name>/src/lib/models/<name>.interface.ts
-   - Realistic MOCK_<NAME> mock data
-   - Any domain-specific interaction methods on I<Name>FacadeInteractions
-4. Implement those interaction methods in BOTH facades — the Angular NgRx-backed facade and the
-   React hook facade. The shared contract is the single source of truth; never duplicate types
-   in app code, always import from @portal/<name>/utils. Keep both facades in lock-step.
-5. Run run_validation("both") and fix anything that fails before finishing.
+Repository Skills are reusable procedures owned by this repo. Their catalog is included below.
+When the user's goal clearly matches a Skill, call load_skill with that Skill name BEFORE any
+mutating tool, then follow the loaded SKILL.md as the task-specific procedure. Do not guess or
+reconstruct a Skill from its catalog description. A loaded Skill supplements CLAUDE.md; it does
+not override the project's architectural rules.
 
-Conventions: files kebab-case; component exports PascalCase; hook exports camelCase with a use
-prefix; shared interfaces get an I prefix. Find the React-idiomatic equivalent — do not translate
-Angular patterns literally.
+For goals that do not match a Skill, use CLAUDE.md and the available tools directly.
+
+Existing new-domain workflow (use only when the goal is to create a brand-new business domain):
+1. Call scaffold_domain with a kebab-case name to generate the shared contract plus Angular/React libs.
+2. Use list_files / read_file to inspect what the generator produced.
+3. Fill in the model, realistic mock data, shared interaction contract, and both facades.
+4. Keep the Angular NgRx-backed facade and React hook facade aligned with the shared contract.
+5. Run run_validation("both") and fix failures before finishing.
+
+Do NOT call scaffold_domain for a component inside an existing domain. If a matching component
+Skill exists, load and follow it instead.
 
 For minor choices (a field name, a sensible default, which of two equivalent approaches), pick a
-reasonable option and note it rather than asking. Only the file edits, generator, and validation
-are available to you — there is no terminal. Work only inside the generated libs/<name> directories;
-do NOT hand-edit workspace config files (.env, nx.json, tsconfig.base.json, package.json) — the
-generator manages path aliases for you. When the domain is scaffolded, wired in both frameworks,
-and validation passes, stop and give a short summary of what you built.`;
+reasonable option and note it rather than asking. Do not hand-edit workspace config files
+(.env, nx.json, tsconfig.base.json, package.json) unless the user's goal explicitly requires it
+and CLAUDE.md allows it. Stay inside the repository, validate the affected framework(s), and end
+with a short summary of what changed and what validation ran.`;
 
-const SYSTEM_PROMPT = claudeMd
-  ? `${claudeMd}\n\n---\n\n${OPERATING_INSTRUCTIONS}`
-  : OPERATING_INSTRUCTIONS;
+const SYSTEM_PROMPT = [
+  claudeMd,
+  `Available repository Skills:\n${skillCatalog}`,
+  OPERATING_INSTRUCTIONS,
+]
+  .filter(Boolean)
+  .join('\n\n---\n\n');
 
 // ── Confirmation gate for mutating tools ─────────────────────────────────────
 
