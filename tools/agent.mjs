@@ -17,7 +17,8 @@ import { stdin, stdout } from 'node:process';
 //   ANTHROPIC_API_KEY=... node tools/agent.mjs "create an Angular user-badge component"
 //
 // Flags:
-//   --yes   skip the confirmation prompt before mutating tools (scaffold/write/edit)
+//   --yes          skip the confirmation prompt before mutating tools (scaffold/write/edit)
+//   --list-skills  print discovered repository Skills and exit without calling the API
 // ─────────────────────────────────────────────────────────────────────────────
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -26,10 +27,15 @@ const MAX_TURNS = 40;
 
 const args = process.argv.slice(2);
 const autoApprove = args.includes('--yes');
-const goal = args.filter((a) => a !== '--yes').join(' ').trim();
+const listSkillsOnly = args.includes('--list-skills');
+const goal = args
+  .filter((a) => a !== '--yes' && a !== '--list-skills')
+  .join(' ')
+  .trim();
 
-if (!goal) {
+if (!goal && !listSkillsOnly) {
   console.error('Usage: node tools/agent.mjs "<natural-language goal>" [--yes]');
+  console.error('       node tools/agent.mjs --list-skills');
   process.exit(1);
 }
 
@@ -49,14 +55,6 @@ const loadEnv = () => {
   }
 };
 loadEnv();
-
-if (!process.env['ANTHROPIC_API_KEY']) {
-  console.error('Set ANTHROPIC_API_KEY in your environment or in a .env file at the repo root.');
-  process.exit(1);
-}
-
-const client = new Anthropic();
-const rl = createInterface({ input: stdin, output: stdout });
 
 // ── Tool plumbing ────────────────────────────────────────────────────────────
 
@@ -122,6 +120,27 @@ const discoverSkills = () => {
 };
 
 const repoSkills = discoverSkills();
+
+if (listSkillsOnly) {
+  if (repoSkills.length === 0) {
+    console.log('No repository Skills discovered.');
+  } else {
+    console.log(
+      repoSkills
+        .map((skill) => `${skill.name}\t${skill.path}\t${skill.description || '(no description)'}`)
+        .join('\n'),
+    );
+  }
+  process.exit(0);
+}
+
+if (!process.env['ANTHROPIC_API_KEY']) {
+  console.error('Set ANTHROPIC_API_KEY in your environment or in a .env file at the repo root.');
+  process.exit(1);
+}
+
+const client = new Anthropic();
+const rl = createInterface({ input: stdin, output: stdout });
 
 const tools = {
   load_skill: {
