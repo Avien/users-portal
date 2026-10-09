@@ -1,11 +1,12 @@
 ---
 name: new-component
 description: Create a new presentational Angular, React, or Vue component in the Users Portal repo. Use when asked to add or create a UI component inside an existing domain. Do not use for new business domains or data/state changes.
+argument-hint: "[component-name] [angular|react|vue]"
 ---
 
 # New Component
 
-Create the component according to this repository's architecture, not as free-form generated code.
+Create the requested component according to this repository's architecture, not as free-form generated code.
 
 ## Workflow
 
