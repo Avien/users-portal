@@ -150,7 +150,7 @@ npm run g:feature-domain -- <name>  # scaffold new dual-framework feature domain
 
 ## Generator — New Feature Domain
 
-Use the `feature-domain` generator when scaffolding a **brand-new domain** (not a component or util — for those use `/new-component` and `/sync-contract`).
+Use the `feature-domain` generator when scaffolding a **brand-new domain** (not a component or util — for those use the `/new-component` repository Skill and `/sync-contract` command).
 
 ```bash
 npm run g:feature-domain -- <domain-name>
@@ -174,7 +174,7 @@ Also updates `tsconfig.base.json` with all 4 path aliases automatically.
 - Run `npm run validate:angular && npm run validate:react` before committing
 
 **When NOT to use the generator:**
-- Adding a new component → `/new-component`
+- Adding a new component → `/new-component` (repository Skill: `.claude/skills/new-component/SKILL.md`)
 - Adding a field or method to an existing shared contract → `/sync-contract`
 - The generator is for new domains only — it creates the full lib structure from scratch
 

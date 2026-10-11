@@ -27,7 +27,7 @@ This Nx monorepo explores the same users-and-orders domain across Angular, React
 - **Hybrid Microfrontend** — Angular hosts an independently deployed React remote through Module Federation 2.0 and a framework-agnostic `mount()` contract, with zero React imports in the host. [Deep dive](docs/mfe-architecture.md)
 - **Canonical real-time Orders state** — HTTP hydration, WebSocket updates, and the Business Agent all derive from the same bounded Orders backend state. [Canonical Orders Store](#-canonical-orders-store)
 - **LLM Business Agent** — a Claude API tool-calling loop over current business data, exposed through one shared Web Component across Angular, React, and Vue. [Deep dive](docs/business-agent.md)
-- **Agentic development workflow** — architecture guardrails live in `CLAUDE.md` and Nx boundaries, with reusable Claude commands, a hand-built autonomous Claude API agent for scoped implementation, and an automated PR review agent for architecture drift. [Deep dive](docs/agentic-workflow.md)
+- **Agentic development workflow** — architecture guardrails live in `CLAUDE.md` and Nx boundaries, with a repository-owned Claude Skill, scoped commands, a hand-built autonomous Claude API agent that can discover Skills, and an automated PR review agent for architecture drift. [Deep dive](docs/agentic-workflow.md)
 
 ## 📦 Project Overview
 
@@ -122,14 +122,15 @@ portal-shell (vanilla JS)
 
 ## 🤖 Agentic AI Development
 
-This repository evolved from close collaboration with **Claude Code** into a deliberately **agentic development workflow**. I drove the core architecture and engineering guardrails early on, and I continue to own feature intent, architectural decisions, constraints, and review direction while increasingly delegating implementation details to Claude Code and automated agents. Those guardrails are encoded in `CLAUDE.md`, Nx boundaries, generators, and automated review.
+This repository evolved from close collaboration with **Claude Code** into a deliberately **agentic development workflow**. I drove the core architecture and engineering guardrails early on, and I continue to own feature intent, architectural decisions, constraints, and review direction while increasingly delegating implementation details to Claude Code and automated agents. Those guardrails are encoded in `CLAUDE.md`, Nx boundaries, generators, repository Skills, and automated review.
 
 | Layer | What it does |
 | :--- | :--- |
 | **`CLAUDE.md`** | The architectural source of truth — module boundaries, naming, layering, framework-isolation rules. Claude Code consumes it as repository-level instructions/context, while the autonomous agent and PR review bot load it verbatim into their own system prompts — so all three work against the same architectural rules instead of an implicit "house style" |
-| **Slash commands** (`.claude/commands/`) | `/new-component`, `/sync-contract`, `/architecture-check` — explicit, scoped prompts for common changes, each one encoding the project's own conventions so the output doesn't depend on restating them every time |
+| **Repository Skill** (`.claude/skills/new-component/SKILL.md`) | `new-component` packages the repo's component-creation procedure as reusable knowledge. Claude Code can discover it from a plain-language request or invoke it as `/new-component`; the custom autonomous agent discovers the same Skill catalog and loads the full procedure when relevant |
+| **Slash commands** (`.claude/commands/`) | `/sync-contract`, `/architecture-check` remain explicit, scoped entry points for workflows that have not been promoted to Skills yet |
 | **Nx generator** (`feature-domain`) | `npm run g:feature-domain -- <name>` scaffolds a full dual-framework feature domain (35 files, both facades, path aliases) in one command — boundaries a human would otherwise have to remember are structural instead |
-| **Autonomous agent** (`tools/agent.mjs`) | A hand-rolled Claude API tool-use loop — describe a goal in natural language, it scaffolds, edits, and validates across both frameworks unattended, with a confirmation gate before mutating actions |
+| **Autonomous agent** (`tools/agent.mjs`) | A hand-rolled Claude API tool-use loop — describe a goal in natural language; it loads `CLAUDE.md`, discovers repository Skills, can follow `new-component` for Angular/React/Vue component work, or use its generator-driven Angular+React new-domain workflow, with a confirmation gate before mutating actions |
 | **PR review agent** (`tools/pr-review-agent.mjs`) | Loads `CLAUDE.md` verbatim as its own system prompt and reviews every PR diff for architecture drift against those same rules — layer boundaries, contract discipline, naming — posting a comment and **failing the check** on confirmed drift (a required status check on `main`) |
 
 > The open question this repository is exploring: **how far can implementation be delegated to autonomous agents while still preserving architectural consistency, maintainability, and technical quality?**
@@ -296,5 +297,5 @@ npm run validate   # lint + test everything, all frameworks
 - **[docs/mfe-architecture.md](docs/mfe-architecture.md)** — full `mount()` API, Platform SDK internals, module-federation gotchas
 - **[docs/state-flow.md](docs/state-flow.md)** — per-framework facade code, all three state-flow diagrams (Angular/React/Vue)
 - **[docs/business-agent.md](docs/business-agent.md)** — LLM-Powered Business Agent architecture, agent loop, canonical source-of-truth model, deployment & security
-- **[docs/agentic-workflow.md](docs/agentic-workflow.md)** — slash command examples, the autonomous agent's tool loop, generator internals, PR review agent design
+- **[docs/agentic-workflow.md](docs/agentic-workflow.md)** — repository Skill/command examples, autonomous Skill discovery and tool loop, generator internals, PR review agent design
 - **[docs/roadmap.md](docs/roadmap.md)** — planned work: authentication & platform, multi-framework MFE evolution, runtime resilience
