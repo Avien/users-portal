@@ -1,7 +1,13 @@
 
 # 👥 Users Portal
 
-This Nx monorepo explores the same users-and-orders domain across Angular, React, and Vue, using framework-native architectures behind shared contracts rather than direct framework translation. It also demonstrates an Angular-host/React-remote Hybrid MFE, one canonical real-time Orders backend, a Claude-powered Business Agent, and an increasingly agentic development workflow.
+**AI Builder Showcase · AI-Native Product Engineering · Frontend Architecture**
+
+A hands-on example of building and evolving software with AI coding agents while keeping architectural direction, design decisions, and engineering quality under human control.
+
+This Nx monorepo implements the same users-and-orders domain across Angular, React, and Vue, with framework-native architectures behind shared contracts. It demonstrates a Hybrid MFE, one canonical real-time Orders backend, and a Claude-powered Business Agent. Development uses Claude Code, repository Skills and architecture guardrails, a custom autonomous coding agent, and automated AI PR review.
+
+**Explore the AI engineering workflow:** [Agentic AI Development](#-agentic-ai-development) · [Detailed walkthrough](docs/agentic-workflow.md)
 
 **🚀 Live Demo**
 
